@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}AI Genel Bakış — LAL{% endblock %}
+{% block page_title %}AI Genel Bakış{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* "Bugünkü Net Kazanç" — hero-figure-primary'nin altına eklenen küçük,
+     ikincil satır. hf-label/hf-value'nun aksine kasıtlı olarak küçük ve
+     soluk tutuldu (asıl vurgu hâlâ "Bugünkü Satış" rakamında kalsın diye). */
+  .hf-subrow {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  .hf-sublabel {
+    opacity: 0.55;
+  }
+  .hf-subvalue {
+    font-weight: 600;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="greeting-hero">
+    <p class="hello">Hoşgeldin, <strong>Sidar</strong></p>
+    <div class="hero-figures">
+      <div class="hero-figure-primary">
+        <div class="hf-label">Bugünkü Satış</div>
+        <div class="hf-value" id="hero-today-sales">–</div>
+        <div class="hf-subrow">
+          <span class="hf-sublabel">Net Kazanç</span>
+          <span class="hf-subvalue" id="hero-today-net-profit">–</span>
+        </div>
+        <svg class="hero-wave" viewBox="0 0 260 20" preserveAspectRatio="none" aria-hidden="true">
+          <path class="hero-wave-anim" d="M0 10 Q 15 2, 30 10 T 60 10 T 90 10 T 120 10 T 150 10 T 180 10 T 210 10 T 240 10 T 270 10" stroke-dasharray="6 5"/>
+          <path class="hero-wave-anim wave-2" d="M0 14 Q 15 8, 30 14 T 60 14 T 90 14 T 120 14 T 150 14 T 180 14 T 210 14 T 240 14 T 270 14" stroke-dasharray="4 6"/>
+        </svg>
+      </div>
+      <div class="hero-figure-secondary">
+        <div class="hf-label">Bu Ay Toplam</div>
+        <div class="hf-value" id="hero-month-sales">–</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lal-grid-2">
+    <div class="lal-status-card risk">
+      <div class="lal-status-card-title">Riskler</div>
+      <div class="lal-status-card-body" id="ai-risks">Yükleniyor…</div>
+    </div>
+    <div class="lal-status-card opportunity">
+      <div class="lal-status-card-title">Fırsatlar</div>
+      <div class="lal-status-card-body" id="ai-opportunities">Yükleniyor…</div>
+    </div>
+  </div>
+
+  <div class="lal-grid-2">
+    <div class="lal-panel">
+      <h2 class="lal-panel-title">Yaklaşan Ödemeler</h2>
+      <div id="ai-upcoming-payments" class="lal-status-card-body">Yükleniyor…</div>
+    </div>
+    <div class="lal-panel">
+      <h2 class="lal-panel-title">Kritik Stoklar</h2>
+      <div id="ai-critical-stock" class="lal-status-card-body">Yükleniyor…</div>
+    </div>
+  </div>
+
+  <div class="lal-panel">
+    <h2 class="lal-panel-title">AI Önerileri</h2>
+    <div class="lal-status-card-body">Öneri motoru henüz eklenmedi — LAL vizyon belgesindeki gelecek modüllerden biri. <span class="lal-badge lal-badge-soon">Yakında</span></div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  // Faz 5: AI Genel Bakış'a özel, bağımsız ve küçük bir veri çekme script'i.
+  // Faz 7.3: eskiden dashboard.js'in loadAll()'u (gereksiz yere margins/
+  // best-sellers gibi bu sayfada hiç kullanılmayan verileri de çekerek) hero
+  // satış rakamlarını dolduruyordu — artık dashboard.js yok, bu yüzden hero
+  // rakamları burada kendi başına, yalnızca ihtiyaç duyduğu veriyle çekiliyor.
+  // shell.js'teki fmtTL global yardımcısına güveniyor (base.html'de bu
+  // dosyadan ÖNCE yükleniyor). "Riskler/Fırsatlar" kartlarının gerçek
+  // veriyle doldurulması Faz 7.4'te ekleniyor.
+  (function () {
+    var todayEl = document.getElementById('hero-today-sales');
+    var monthEl = document.getElementById('hero-month-sales');
+    if (todayEl && monthEl) {
+      fetch('/api/daily-sales?full_history=true&marketplace=all')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error || !data.daily) { todayEl.textContent = '—'; monthEl.textContent = '—'; return; }
+          var daily = data.daily;
+          var now = new Date();
+          var todayStr = now.toISOString().slice(0, 10);
+          var monthPrefix = todayStr.slice(0, 7);
+          var todayRow = daily.find(function (d) { return (d.date || '').slice(0, 10) === todayStr; });
+          var monthTotal = daily
+            .filter(function (d) { return (d.date || '').slice(0, 7) === monthPrefix; })
+            .reduce(function (sum, d) { return sum + (d.net_amount || 0); }, 0);
+          todayEl.textContent = fmtTL(todayRow ? todayRow.net_amount : 0);
+          monthEl.textContent = fmtTL(monthTotal);
+        })
+        .catch(function () { todayEl.textContent = '—'; monthEl.textContent = '—'; });
+    }
+
+    // Bugünkü Net Kazanç — finance_engine'deki TAM netProfit ile birebir
+    // (komisyon+hizmet bedeli+kargo+stopaj+iade+platform bedeli dahil).
+    // Bugün satılan bir SKU'nun maliyeti hiç girilmemişse backend bilinçli
+    // olarak netProfit=null döner (yarı-doğru rakam göstermemek için) —
+    // burada bu durumda '-' gösterip küçük bir açıklama ekliyoruz.
+    var netProfitEl = document.getElementById('hero-today-net-profit');
+    if (netProfitEl) {
+      fetch('/api/today-net-profit')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) { netProfitEl.textContent = '—'; return; }
+          if (data.netProfit === null || data.netProfit === undefined) {
+            netProfitEl.textContent = '–';
+            netProfitEl.title = data.missingCostCount
+              ? (data.missingCostCount + ' ürünün maliyeti tanımlı değil — net kazanç güvenilir hesaplanamıyor')
+              : 'Bugün için henüz hesaplanabilir veri yok';
+            netProfitEl.classList.remove('is-danger');
+            return;
+          }
+          netProfitEl.textContent = fmtTL(data.netProfit);
+          netProfitEl.title = '';
+          netProfitEl.classList.toggle('is-danger', data.netProfit < 0);
+          netProfitEl.style.color = data.netProfit > 0 ? 'var(--green)' : '';
+        })
+        .catch(function () { netProfitEl.textContent = '—'; });
+    }
+
+    fetch('/api/product-stock')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var el = document.getElementById('ai-critical-stock');
+        var low = (data.items || []).filter(function (i) { return i.lowStock; });
+        if (!low.length) { el.textContent = 'Şu anda düşük stoklu ürün yok.'; return; }
+        el.innerHTML = low.slice(0, 6).map(function (i) {
+          return '<div class="lal-list-row">' + i.sku + ' — <span class="is-danger">' + i.quantity + ' adet kaldı</span></div>';
+        }).join('');
+      })
+      .catch(function () { document.getElementById('ai-critical-stock').textContent = 'Veri alınamadı.'; });
+
+    var today = new Date();
+    var in7 = new Date(today.getTime() + 7 * 86400000);
+    var fmt = function (d) { return d.toISOString().slice(0, 10); };
+    fetch('/api/payout-calendar?start=' + fmt(today) + '&end=' + fmt(in7))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var el = document.getElementById('ai-upcoming-payments');
+        var days = (data && data.days) || data.items || [];
+        if (!Array.isArray(days) || !days.length) { el.textContent = 'Önümüzdeki 7 günde planlı ödeme görünmüyor.'; return; }
+        el.innerHTML = days.slice(0, 6).map(function (d) {
+          return '<div class="lal-list-row">' + (d.date || '') + '</div>';
+        }).join('');
+      })
+      .catch(function () { document.getElementById('ai-upcoming-payments').textContent = 'Veri alınamadı.'; });
+  })();
+
+  // Faz 7.4: alerts.js (base.html üzerinden HER sayfada global çalışıyor)
+  // ürün marjı verisini zaten hesaplayıp 'lal:alerts-updated' event'iyle
+  // yayınlıyor — burada ikinci kez /api/product-performance çekmek yerine
+  // o event'i dinleyip Riskler/Fırsatlar kartlarını dolduruyoruz.
+  document.addEventListener('lal:alerts-updated', function (e) {
+    var d = e.detail || {};
+    var risksEl = document.getElementById('ai-risks');
+    var oppEl = document.getElementById('ai-opportunities');
+
+    var riskParts = [];
+    if (d.negative && d.negative.length) {
+      riskParts.push('<div class="lal-list-row"><span class="is-danger">' + d.negative.length + ' ürün zararına satılıyor</span> (negatif marj)</div>');
+    }
+    if (d.missingCost && d.missingCost.length) {
+      riskParts.push('<div class="lal-list-row"><span class="is-danger">' + d.missingCost.length + ' ürünün maliyeti tanımlı değil</span> — kârı hesaba katılmıyor</div>');
+    }
+    if (d.lowMargin && d.lowMargin.length) {
+      riskParts.push('<div class="lal-list-row">' + d.lowMargin.length + ' ürünün kâr marjı %10\'un altında</div>');
+    }
+    if (d.estimatedCount) {
+      riskParts.push('<div class="lal-list-row">' + fmtNum(d.estimatedCount) + ' sipariş satırı için henüz settlement yok (tahmini hesaplandı)</div>');
+    }
+    if (risksEl) {
+      risksEl.innerHTML = riskParts.length
+        ? riskParts.join('')
+        : 'Şu an için bir risk görünmüyor — tüm ürünlerin maliyeti tanımlı ve marjlar makul.';
+    }
+
+    if (oppEl) {
+      var opps = (d.opportunities || []).slice(0, 6);
+      if (!opps.length) {
+        oppEl.innerHTML = 'Marjı %30 ve üzeri, öne çıkan bir ürün bulunamadı.';
+      } else {
+        oppEl.innerHTML = opps.map(function (i) {
+          var marginPct = (i.margin !== null && i.margin !== undefined) ? Math.round(i.margin * 100) : null;
+          return '<div class="lal-list-row">' + (i.sku || '–')
+            + (i.productName ? ' — ' + i.productName : '')
+            + (marginPct !== null ? ' <span style="color:var(--green)">%' + marginPct + ' marj</span>' : '')
+            + '</div>';
+        }).join('');
+      }
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Ürünler — LAL{% endblock %}
+{% block page_title %}Ürünler{% endblock %}
+
+{% block content %}
+  <!-- === ÜRÜN PERFORMANSI & MALİYET YÖNETİMİ (birleşik) === -->
+  <div class="panel">
+    <h2>Ürün Performansı &amp; Maliyet Yönetimi</h2>
+    <p class="panel-note">Seçili tarih aralığında satılan tüm ürünler. Bir sütun başlığına tıklayarak sırala. Maliyeti eksik ürünler için aşağıdaki tablodaki ilgili satıra maliyeti girip kaydedebilirsin.</p>
+    <span class="filter-chip is-hidden" id="margins-filter-chip">
+      <span class="chip-label"></span>
+      <button type="button" id="margins-filter-clear">✕ Temizle</button>
+    </span>
+
+    <button type="button" id="cf-toggle" class="lal-btn lal-btn-secondary lal-mb-4">
+      + Tabloda görünmeyen bir SKU için maliyet ekle
+    </button>
+    <div id="cf-form" class="is-hidden lal-mb-4">
+      <p class="panel-note">Bu, henüz hiç satışı olmadığı için aşağıdaki tabloda görünmeyen bir ürüne <strong>önceden</strong> maliyet tanımlamak içindir. Zaten tabloda görünen (satışı olan) bir SKU'nun maliyetini eksik/hatalı ise, doğrudan tablodaki satırından düzelt.</p>
+      <div id="cost-form-msg" class="lal-form-msg is-hidden"></div>
+      <div class="lal-field-row">
+        <div class="lal-field">
+          <label for="cf-sku">SKU *</label>
+          <input type="text" id="cf-sku" placeholder="SH-10TF-BG">
+        </div>
+        <div class="lal-field lal-field-grow">
+          <label for="cf-name">Ürün Adı</label>
+          <input type="text" id="cf-name" placeholder="(opsiyonel)">
+        </div>
+        <div class="lal-field lal-field--md">
+          <label for="cf-cost">Maliyet (KDV Dahil) *</label>
+          <input type="number" step="0.01" id="cf-cost" placeholder="2145">
+        </div>
+        <button class="lal-btn lal-btn-primary" id="cf-submit">Kaydet</button>
+      </div>
+    </div>
+    <div id="margins-table-wrap" class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th data-sort="sku">SKU ↕</th>
+            <th>Ürün</th>
+            <th data-sort="quantity">Adet ↕</th>
+            <th data-sort="revenue">Ciro ↕</th>
+            <th data-sort="profit">Kâr ↕</th>
+            <th data-sort="margin">Marj ↕</th>
+            <th>Maliyet</th>
+          </tr>
+        </thead>
+        <tbody id="margins-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- === FİYATLANDIRMA HESAPLAYICISI (Faz 5: artık accordion değil, sayfanın sabit bir bölümü) === -->
+  <div class="panel" id="details-pricing">
+    <div class="panel-header-row">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg> Fiyatlandırma Hesaplayıcısı</h2>
+    </div>
+    <div class="details-body">
+      <p class="panel-note">Maliyet ve hedef kâr marjına göre önerilen satış fiyatını hesaplar. Trendyol komisyonunu düşer; kargo/stopaj gibi diğer kesintileri içermez, kaba bir tahmindir.</p>
+      <div class="lal-field-row">
+        <div class="lal-field">
+          <label for="pc-sku-select">SKU'dan Doldur</label>
+          <select id="pc-sku-select">
+            <option value="">— seç —</option>
+          </select>
+        </div>
+        <div class="lal-field lal-field--md">
+          <label for="pc-cost">Maliyet (KDV Dahil)</label>
+          <input type="number" step="0.01" id="pc-cost">
+        </div>
+        <div class="lal-field lal-field--sm">
+          <label for="pc-commission">Komisyon %</label>
+          <input type="number" step="0.1" id="pc-commission">
+        </div>
+        <div class="lal-field lal-field--sm">
+          <label for="pc-margin">Hedef Kâr Marjı %</label>
+          <input type="number" step="0.5" id="pc-margin" value="20">
+        </div>
+        <button class="lal-btn lal-btn-primary" id="pc-calc">Hesapla</button>
+      </div>
+      <div id="pc-result" class="lal-callout lal-callout-success is-hidden"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/urunler.js') }}"></script>
+{% endblock %}

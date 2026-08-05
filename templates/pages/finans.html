@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Finans — LAL{% endblock %}
+{% block page_title %}Finans{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/payout-calendar.css') }}">
+{% endblock %}
+
+{% block content %}
+  <div class="lal-tabs" id="finans-tabs">
+    <button type="button" class="lal-tab is-active" data-tab="fin-genel-bakis">Genel Bakış</button>
+    <button type="button" class="lal-tab" data-tab="fin-sabit-giderler">Sabit Giderler</button>
+    <button type="button" class="lal-tab" data-tab="fin-hakedis-takvimi">Hakediş Takvimi</button>
+  </div>
+
+  <!-- === GENEL BAKIŞ === -->
+  <div class="lal-tab-panel is-active" id="fin-genel-bakis">
+    <div class="lal-panel">
+      <h2 class="lal-panel-title">Finans Akışı</h2>
+      <p class="panel-note">Ciro'dan kasaya giren paraya kadar olan yol. Kalem bazlı canlı rakamlar için Gösterge Paneli'ndeki KPI kartlarına ve aşağıdaki "Sabit Giderler" / "Hakediş Takvimi" sekmelerine bakabilirsin.</p>
+      <div class="lal-flow">
+        <div class="lal-flow-step">Ciro</div>
+        <span class="lal-flow-arrow">→</span>
+        <div class="lal-flow-step">Komisyon</div>
+        <span class="lal-flow-arrow">→</span>
+        <div class="lal-flow-step">Hizmet Bedeli</div>
+        <span class="lal-flow-arrow">→</span>
+        <div class="lal-flow-step">Stopaj</div>
+        <span class="lal-flow-arrow">→</span>
+        <div class="lal-flow-step">İade</div>
+        <span class="lal-flow-arrow">→</span>
+        <div class="lal-flow-step">Ürün Maliyeti</div>
+        <span class="lal-flow-arrow">→</span>
+        <div class="lal-flow-step is-result">Net Kâr</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- === SABİT GİDERLER === -->
+  <div class="lal-tab-panel" id="fin-sabit-giderler">
+    <div class="panel">
+      <h2>Aylık Sabit Giderler</h2>
+      <p class="panel-note">Kira, personel maaşı, muhasebe, elektrik, paketleme malzemesi gibi sipariş bazlı olmayan, ay bazlı sabit giderler. Buraya girilen tutarlar, ilgili ayın Net Kâr'ından düşülerek "Gerçek Net Kâr" olarak Aylık Kâr Trendi grafiğinde gösterilir.</p>
+
+      <div class="lal-field-row lal-mb-4">
+        <div class="lal-field">
+          <label for="fe-month">Ay *</label>
+          <input type="month" id="fe-month">
+        </div>
+        <div class="lal-field">
+          <label for="fe-label">Kalem *</label>
+          <input type="text" id="fe-label" placeholder="Kira">
+        </div>
+        <div class="lal-field lal-field--md">
+          <label for="fe-amount">Tutar (₺) *</label>
+          <input type="number" step="0.01" id="fe-amount" placeholder="15000">
+        </div>
+        <div class="lal-field lal-field-grow">
+          <label for="fe-note">Not</label>
+          <input type="text" id="fe-note" placeholder="(opsiyonel)">
+        </div>
+        <button class="lal-btn lal-btn-primary" id="fe-submit">Ekle</button>
+      </div>
+      <div id="fe-form-msg" class="lal-form-msg is-hidden"></div>
+
+      <div id="fe-table-wrap" class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Ay</th>
+              <th>Kalem</th>
+              <th>Tutar</th>
+              <th>Not</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="fe-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- === HAKEDİŞ TAKVİMİ === -->
+  <div class="lal-tab-panel" id="fin-hakedis-takvimi">
+    <div class="panel" id="details-payout-calendar">
+      <div class="panel-header-row">
+        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg> Hakediş Takvimi</h2>
+      </div>
+      <div class="details-body">
+        <p class="panel-note">Trendyol ve Hepsiburada'dan hesabınıza hangi gün ne kadar para geçtiğini/geçeceğini gösterir. <span class="pc-dot-confirmed pc-legend-dot"></span> Kesinleşmiş (gerçek banka verisi) — <span class="pc-dot-official pc-legend-dot"></span> Pazaryerinin kendi sitesinden çekilen resmi veri — <span class="pc-dot-estimated pc-legend-dot"></span> Bizim tahminimiz (pazaryeri tarih verdi) — <span class="pc-dot-lag pc-legend-dot"></span> Bizim kaba tahminimiz (henüz pazaryeri tarih vermedi).</p>
+
+        <div class="lal-field-row lal-mb-3">
+          <select id="pcMarketplaceFilter">
+            <option value="">Tüm pazaryerleri</option>
+            <option value="trendyol">Sadece Trendyol</option>
+            <option value="hepsiburada">Sadece Hepsiburada</option>
+          </select>
+          <button class="lal-btn lal-btn-primary" id="pcRefresh">Yenile</button>
+          <span id="pcStatus" class="lal-status-text"></span>
+        </div>
+
+        <!-- Faz 7.2: Pazaryeri kimlik bilgisi (credential) formu Ayarlar
+             sayfasına taşındı — bkz. templates/pages/ayarlar.html ve
+             static/js/ayarlar-credentials.js. Burada sadece takvimin
+             kendisi kalıyor. -->
+        <p class="panel-note">Oturum bilgisi (kimlik bilgisi) girme/yenileme artık <a href="{{ url_for('ayarlar_page') }}">Ayarlar</a> sayfasında.</p>
+
+        <div class="pc-week-summary" id="pcWeekSummary"></div>
+
+        <div class="pc-month-nav">
+          <button id="pcPrevMonth" aria-label="Önceki ay">‹</button>
+          <div id="pcMonthLabel"></div>
+          <button id="pcNextMonth" aria-label="Sonraki ay">›</button>
+        </div>
+        <div id="pcCalendarGrid"></div>
+
+        <div id="pcUnplannedNote" class="panel-note lal-mt-3"></div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/finans-giderler.js') }}"></script>
+<script src="{{ url_for('static', filename='js/payout-calendar.js') }}"></script>
+<script>
+  // Finans sayfası sekme geçişi — yalnızca bu sayfaya özel, küçük ve bağımsız bir UI script'i.
+  (function () {
+    var tabs = document.querySelectorAll('#finans-tabs .lal-tab');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        tabs.forEach(function (t) { t.classList.remove('is-active'); });
+        document.querySelectorAll('.lal-tab-panel').forEach(function (p) { p.classList.remove('is-active'); });
+        tab.classList.add('is-active');
+        document.getElementById(tab.dataset.tab).classList.add('is-active');
+      });
+    });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,69 @@
+<aside class="lal-sidebar" id="lal-sidebar">
+  <div class="lal-sidebar-brand">
+    <span class="lal-sidebar-brand-text">LAL</span>
+    <button class="lal-sidebar-collapse-btn" id="sidebar-collapse-btn" type="button" aria-label="Kenar çubuğunu daralt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="9" x2="9" y1="3" y2="21"/></svg>
+    </button>
+  </div>
+
+  <nav class="lal-nav-group">
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'ai-genel-bakis' else '' }}" href="{{ url_for('ai_genel_bakis_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+      <span class="lal-nav-label">AI Genel Bakış</span>
+    </a>
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'gosterge-paneli' else '' }}" href="{{ url_for('gosterge_paneli_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+      <span class="lal-nav-label">Gösterge Paneli</span>
+    </a>
+  </nav>
+
+  <div class="lal-nav-divider"></div>
+
+  <nav class="lal-nav-group">
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'finans' else '' }}" href="{{ url_for('finans_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+      <span class="lal-nav-label">Finans</span>
+    </a>
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'siparisler' else '' }}" href="{{ url_for('siparisler_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg>
+      <span class="lal-nav-label">Siparişler</span>
+    </a>
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'urunler' else '' }}" href="{{ url_for('urunler_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3 5.5 19h13z"/><path d="M12 12h6.5L22 21H2l3.5-9z" opacity="0"/><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg>
+      <span class="lal-nav-label">Ürünler</span>
+    </a>
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'stok' else '' }}" href="{{ url_for('stok_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+      <span class="lal-nav-label">Stok</span>
+    </a>
+  </nav>
+
+  <div class="lal-nav-divider"></div>
+
+  <nav class="lal-nav-group">
+    <span class="lal-nav-item" aria-disabled="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></svg>
+      <span class="lal-nav-label">Raporlar</span>
+      <span class="lal-nav-soon">Yakında</span>
+    </span>
+    <span class="lal-nav-item" aria-disabled="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg>
+      <span class="lal-nav-label">Otomasyon</span>
+      <span class="lal-nav-soon">Yakında</span>
+    </span>
+  </nav>
+
+  <div class="lal-nav-divider"></div>
+
+  <nav class="lal-nav-group">
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'ayarlar' else '' }}" href="{{ url_for('ayarlar_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="lal-nav-label">Ayarlar</span>
+    </a>
+  </nav>
+
+  <div class="lal-sidebar-footer">
+    <div class="lal-user-avatar">S</div>
+    <span class="lal-user-meta">Sidar</span>
+  </div>
+</aside>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Ayarlar — LAL{% endblock %}
+{% block page_title %}Ayarlar{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ayarlar-credentials.css') }}">
+{% endblock %}
+
+{% block content %}
+  <div class="lal-panel">
+    <h2 class="lal-panel-title">API Bağlantı Durumu</h2>
+    <p class="panel-note">Bağlantı durumu üst bardaki etikette (<code>env-label</code>) gösterilir; sorun varsa sayfanın üstünde uyarı bandı çıkar.</p>
+  </div>
+
+  <div class="lal-panel">
+    <h2 class="lal-panel-title">Pazaryeri Kimlik Bilgileri</h2>
+    <p class="panel-note">Trendyol/Hepsiburada'nın gelecek ödeme (hakediş) verisi resmi API'de yok — tarayıcıdan kopyalanan bir oturum bilgisiyle (DevTools → Network) çekiliyor. Trendyol'da bu bilgi kısa ömürlü (saatte 1 elden yenilemen gerekebilir), Hepsiburada'da haftalarca geçerli. Çekilen veri <strong>Finans → Hakediş Takvimi</strong>'nde görünür.</p>
+
+    <details class="pc-external-box" id="pcExternalBox" open>
+      <summary>
+        <svg class="pc-ext-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="9 18 15 12 9 6"/></svg>
+        Pazaryeri Resmi Ödeme Verisiyle Senkronize Et
+      </summary>
+      <div class="pc-ext-body">
+        <div class="pc-ext-row">
+          <span class="pc-ext-row-label">Trendyol</span>
+          <input type="password" id="pcCredTrendyol" placeholder="Authorization: Bearer eyJ...">
+          <button id="pcCredSaveTrendyol">Kaydet</button>
+          <span id="pcCredStatusTrendyol" class="pc-ext-row-status"></span>
+        </div>
+        <div class="pc-ext-row">
+          <span class="pc-ext-row-label">Hepsiburada</span>
+          <input type="password" id="pcCredHepsiburada" placeholder="Cookie: ...">
+          <button id="pcCredSaveHepsiburada">Kaydet</button>
+          <span id="pcCredStatusHepsiburada" class="pc-ext-row-status"></span>
+        </div>
+        <div class="pc-ext-row">
+          <button class="lal-btn lal-btn-primary" id="pcExternalSync">Şimdi Çek</button>
+          <span id="pcExternalSyncStatus" class="pc-ext-row-status"></span>
+        </div>
+      </div>
+    </details>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/ayarlar-credentials.js') }}"></script>
+{% endblock %}
+

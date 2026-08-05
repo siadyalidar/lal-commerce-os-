@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Stok — LAL{% endblock %}
+{% block page_title %}Stok{% endblock %}
+
+{% block content %}
+  <div class="panel" id="details-product-settings">
+    <div class="panel-header-row">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8"/><path d="M3 10v6a2 2 0 0 0 2 2h1.5"/><path d="M21 10v6a2 2 0 0 1-2 2h-1.5"/><rect width="10" height="6" x="7" y="14" rx="1"/></svg> Düşük Stok Uyarısı</h2>
+    </div>
+    <div class="details-body">
+      <p class="panel-note">Pazaryerlerinden stok verisini çeker ve seçtiğiniz min. eşiğin altına düşen ürünleri kırmızı vurgular.</p>
+
+      <div class="ps-actions lal-toolbar">
+        <button class="lal-btn lal-btn-primary" id="psSyncTrendyol">Trendyol Stoğunu Güncelle</button>
+        <button class="lal-btn lal-btn-primary" id="psSyncHB">Hepsiburada Stoğunu Güncelle</button>
+        <select id="psMarketplaceFilter">
+          <option value="">Tüm pazaryerleri</option>
+          <option value="trendyol">Sadece Trendyol</option>
+          <option value="hepsiburada">Sadece Hepsiburada</option>
+        </select>
+        <label class="lal-checkbox-label">
+          <input type="checkbox" id="psOnlyLow"> Sadece düşük stoklular
+        </label>
+      </div>
+      <div id="psStatus" class="lal-status-text"></div>
+
+      <div class="table-scroll">
+        <table class="ps-table">
+          <thead>
+            <tr>
+              <th>Pazaryeri</th>
+              <th>SKU</th>
+              <th>Güncel Stok</th>
+              <th>Min Eşik</th>
+              <th>Son Güncelleme</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="psTableBody">
+            <tr><td colspan="6">Yükleniyor…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/stock-settings.js') }}"></script>
+{% endblock %}

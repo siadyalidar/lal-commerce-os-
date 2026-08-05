@@ -1,0 +1,36 @@
+<header class="lal-topbar">
+  <div>
+    <div class="lal-topbar-title">{% block page_title %}LAL Commerce OS{% endblock %}</div>
+    <div class="sub" id="env-label">Bağlanılıyor…</div>
+    <div class="sub is-hidden" id="last-sync-label"></div>
+  </div>
+  <div class="lal-topbar-controls controls">
+    <div class="mp-switch" id="mp-switch" role="tablist">
+      <button type="button" class="mp-switch-btn active" data-mp="all">Tümü</button>
+      <button type="button" class="mp-switch-btn" data-mp="trendyol">Trendyol</button>
+      <button type="button" class="mp-switch-btn" data-mp="hepsiburada">Hepsiburada</button>
+    </div>
+    <select id="range-select">
+      <option value="today">Bugün</option>
+      <option value="7">Son 7 gün</option>
+      <option value="14">Son 14 gün</option>
+      <option value="30" selected>Son 30 gün</option>
+      <option value="60">Son 60 gün</option>
+      <option value="90">Son 90 gün</option>
+      <option value="all">Tüm Zamanlar</option>
+    </select>
+    <button class="lal-btn lal-btn-primary" id="sync-btn">Verileri Senkronize Et</button>
+  </div>
+</header>
+
+<div id="config-warning">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+  <span>API bilgileri henüz ayarlanmadı. Proje klasöründeki <code>.env.example</code> dosyasını
+  <code>.env</code> olarak kopyalayıp <code>TRENDYOL_SUPPLIER_ID</code>, <code>TRENDYOL_API_KEY</code>
+  ve <code>TRENDYOL_API_SECRET</code> alanlarını doldurup uygulamayı yeniden başlatın.</span>
+</div>
+<div id="error-banner"></div>
+<div id="sync-status"></div>
+
+<!-- Uyarılar artık her sayfada görünür tek birleşik bant (Faz 3 IA kararı) -->
+<div id="alerts-band"></div>

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Siparişler — LAL{% endblock %}
+{% block page_title %}Siparişler{% endblock %}
+
+{% block content %}
+  <div class="panel" id="details-orders">
+    <div class="panel-header-row">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg> Sipariş Listesi</h2>
+    </div>
+    <div class="details-body">
+      <div class="lal-toolbar">
+        <input type="text" id="search-input" placeholder="Sipariş no / müşteri ara…">
+        <select id="status-select">
+          <option value="">Tüm Durumlar</option>
+          <option value="Delivered">Teslim Edildi</option>
+          <option value="Shipped">Kargoda</option>
+          <option value="Created">Oluşturuldu</option>
+          <option value="Picking">Hazırlanıyor</option>
+          <option value="Cancelled">İptal</option>
+          <option value="UnSupplied">Karşılanamadı</option>
+          <option value="Returned">İade</option>
+        </select>
+      </div>
+      <p class="panel-note" id="result-note">Yükleniyor…</p>
+      <div id="orders-table-wrap">
+        <table>
+          <thead><tr><th></th><th>Tarih</th><th>Sipariş No</th><th>Pazaryeri</th><th>Müşteri</th><th>Durum</th><th>Kargo</th><th>Net Tutar</th></tr></thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination is-hidden" id="pagination">
+        <span id="page-info"></span>
+        <div><button id="prev-btn" class="lal-btn lal-btn-secondary">← Önceki</button> <button id="next-btn" class="lal-btn lal-btn-secondary">Sonraki →</button></div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/siparisler.js') }}"></script>
+{% endblock %}

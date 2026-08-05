@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Gösterge Paneli — LAL{% endblock %}
+{% block page_title %}Gösterge Paneli{% endblock %}
+
+{% block content %}
+  <div id="summary-loading" class="loading">Veriler yükleniyor…</div>
+  <div id="summary-content" class="is-hidden">
+
+    <div class="hero-row">
+      <div class="hero-stat" id="net-profit-hero">
+        <div class="hero-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div>
+        <div>
+          <div class="hero-stat-label">Net Kâr</div>
+          <div class="hero-stat-value" id="stat-net-profit">–</div>
+        </div>
+      </div>
+      <div class="hero-stat neutral">
+        <div class="hero-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div>
+        <div>
+          <div class="hero-stat-label">Ciro</div>
+          <div class="hero-stat-value" id="stat-gross-revenue">–</div>
+        </div>
+      </div>
+      <div class="hero-stat neutral">
+        <div class="hero-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/></svg></div>
+        <div>
+          <div class="hero-stat-label">Net Hakediş <span class="hint" title="Ciro − Komisyon − Hizmet Bedeli">ⓘ</span></div>
+          <div class="hero-stat-value" id="stat-revenue">–</div>
+        </div>
+      </div>
+      <div class="hero-stat neutral">
+        <div class="hero-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg></div>
+        <div>
+          <div class="hero-stat-label">Brüt Kâr</div>
+          <div class="hero-stat-value" id="stat-gross-profit">–</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-grid">
+      <div class="card"><div class="label">Bugünün Siparişi</div><div class="value" id="today-order-count">–</div></div>
+      <div class="card"><div class="label">Toplam Sipariş</div><div class="value" id="stat-orders">–</div></div>
+      <div class="card"><div class="label">Ortalama Marj <span class="hint" title="Net Kâr / Ciro">ⓘ</span></div><div class="value" id="stat-avg-margin">–</div></div>
+      <div class="card"><div class="label">Komisyon</div><div class="value red" id="stat-commission">–</div></div>
+      <div class="card"><div class="label">Hizmet Bedeli</div><div class="value red" id="stat-service-fee">–</div></div>
+      <div class="card"><div class="label">Stopaj</div><div class="value red" id="stat-stoppage">–</div></div>
+      <div class="card"><div class="label">Platform Hizmet Bedeli / Kesinti (dönemsel)</div><div class="value red" id="stat-platform-fee">–</div></div>
+      <div class="card"><div class="label">Erken Ödeme Maliyeti</div><div class="value red" id="stat-cash-advance">–</div></div>
+      <div class="card"><div class="label">İade Tutarı <span class="hint" title="Net Kâr'dan düşülmüştür">ⓘ</span></div><div class="value red" id="stat-return">–</div><div class="sub-note" id="stat-return-count"></div></div>
+      <div class="card"><div class="label">Dönem İçi Hakediş Ödemesi <span class="hint" title="Kasaya bu dönem içinde fiilen geçen tutar">ⓘ</span></div><div class="value" id="stat-payment-order">–</div></div>
+    </div>
+
+    <!-- === AYLIK KÂR TRENDİ === -->
+    <div class="panel">
+      <h2>Aylık Kâr Trendi</h2>
+      <p class="panel-note">Verinin başlangıcından bugüne, ay ay ciro, brüt kâr ve net kâr. Bu grafik yukarıdaki tarih filtresinden bağımsızdır — her zaman tüm geçmişi gösterir.</p>
+      <div id="monthly-loading" class="loading loading-sm">Yükleniyor…</div>
+      <div id="monthlyProfitChartWrap" class="is-hidden"><canvas id="monthlyProfitChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- === DETAYLI GRAFİKLER (Faz 5: artık accordion değil, sayfanın sabit bir bölümü) === -->
+  <div class="panel" id="details-charts">
+    <div class="panel-header-row">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg> Detaylı Grafikler &amp; Satır Dökümü</h2>
+    </div>
+    <div class="details-body">
+      <div id="charts-loading" class="loading">Yükleniyor…</div>
+      <div id="charts-content" class="is-hidden">
+        <div class="panel"><h2>Günlük Net Satış (₺)</h2><canvas id="salesChart"></canvas></div>
+        <div class="panel"><h2>Günlük Sipariş Adedi</h2><canvas id="ordersChart"></canvas></div>
+        <div class="panel"><h2>Günlük İadeler</h2><canvas id="returnsChart"></canvas></div>
+        <div class="panel">
+          <h2>Sipariş Satırı Detayı</h2>
+          <p class="panel-note" id="lines-note-standard">
+            <span class="pill pill-real">Gerçek</span> = Finans API'den gelen kesin hakediş ·
+            <span class="pill pill-estimated">Tahmini</span> = henüz settlement oluşmamış ·
+            <span class="pill pill-missing">Maliyet eksik</span> = bu SKU için ürün maliyeti tanımlı değil
+          </p>
+          <label id="lines-estimated-filter-label" class="lal-checkbox-label lal-mb-3">
+            <input type="checkbox" id="lines-estimated-only"> Sadece "Tahmini" satırları göster
+          </label>
+          <div class="table-scroll">
+            <table>
+              <thead><tr id="lines-thead-row"><th>Tarih</th><th>Sipariş No</th><th>SKU</th><th>Ürün</th><th>Adet</th><th>Ciro</th><th>Komisyon</th><th>Hizmet Bedeli</th><th>Net Hakediş</th><th>Kargo</th><th>Maliyet</th><th>Kâr</th><th>Durum</th></tr></thead>
+              <tbody id="lines-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/gosterge-paneli.js') }}"></script>
+{% endblock %}

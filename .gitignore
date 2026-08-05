@@ -1,0 +1,19 @@
+# Sanal ortam
+venv/
+__pycache__/
+*.pyc
+
+# Hassas veri / credential
+.env
+.env.*
+.payout_credential.key
+trendyol_data.db
+*.db
+
+# Kullanıcı yüklemeleri (Excel maliyet dosyaları vb.)
+uploads/
+
+# Editör/OS
+.DS_Store
+.idea/
+.vscode/

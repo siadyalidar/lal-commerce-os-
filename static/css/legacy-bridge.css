@@ -1,0 +1,45 @@
+/*
+  ============================================================================
+  LEGACY BRIDGE
+  ============================================================================
+  Faz 1'de tespit edilen eski component'ler (--bg, --accent, --card-bg gibi
+  isimlendirilmemiş/eski token adları) bu dosya sayesinde artık DOĞRUDAN
+  LDL token'larından (tokens.css) besleniyor. Kendi değerini taşımıyor,
+  yalnızca eski isimden yeni isme yönlendiriyor.
+
+  Bu, Faz 6 (CSS Refactor) tamamlanana kadar geçici bir köprü: eski
+  component'ler kod olarak hâlâ eski değişken adlarını kullanıyor ama
+  artık aynı tek kaynağa (LDL) bağlılar — iki ayrı renk sistemi yok.
+  Faz 6'da eski component'ler tek tek --lal-* adlarına taşınınca bu
+  dosya kaldırılacak.
+  ============================================================================
+*/
+
+:root {
+  --font-display: var(--lal-font-display);
+  --font-body: var(--lal-font-body);
+  --font-mono: var(--lal-font-mono);
+
+  --bg: var(--lal-bg);
+  --bg-elevated: var(--lal-bg-elevated);
+  --surface: var(--lal-surface);
+  --surface-2: var(--lal-surface-2);
+  --surface-hover: var(--lal-surface-hover);
+  --border: var(--lal-border);
+  --border-soft: var(--lal-border-soft);
+  --text-main: var(--lal-text-main);
+  --text-muted: var(--lal-text-muted);
+  --text-faint: var(--lal-text-faint);
+
+  --accent: var(--lal-accent);
+  --accent-dim: var(--lal-accent-dim);
+  --accent-glow: var(--lal-accent-glow);
+  --accent-glow-strong: var(--lal-accent-glow-strong);
+
+  --green: var(--lal-green);
+  --green-dim: var(--lal-green-dim);
+  --red: var(--lal-red);
+  --red-dim: var(--lal-red-dim);
+  --amber: var(--lal-amber);
+  --amber-dim: var(--lal-amber-dim);
+}

@@ -1,0 +1,172 @@
+/*
+  ============================================================================
+  LAL DESIGN LANGUAGE (LDL) — Token Katmanı
+  ============================================================================
+  Bu dosya LAL Commerce OS'in TEK gerçek tasarım kaynağıdır (single source
+  of truth). Sidebar'dan tabloya, butondan grafiğe kadar her component
+  buradaki token'lara bağlıdır — doğrudan hex/px değeri yazmaz.
+
+  Kural: Yeni bir modül/sayfa eklendiğinde önce buraya bakılır. Burada
+  karşılığı olmayan bir renk/spacing/radius değeri gerekiyorsa, önce token
+  olarak buraya eklenir, sonra component'te kullanılır. Component dosyaları
+  hiçbir zaman ham hex kodu veya rastgele px değeri içermez.
+
+  Faz 2 (LAL Design System) belgesinin birebir kod karşılığıdır.
+  ============================================================================
+*/
+
+:root {
+  /* ---------------------------------------------------------------------
+     1) NÖTR RENKLER — zemin / yüzey katmanları (derinlik hissi için 5 kademe)
+     --------------------------------------------------------------------- */
+  --lal-bg: #0A0B0D;
+  --lal-bg-elevated: #101216;
+  --lal-surface: #15171C;
+  --lal-surface-2: #1B1E24;
+  --lal-surface-hover: #20232A;
+  --lal-border: #24272E;
+  --lal-border-soft: #1B1E24;
+
+  /* ---------------------------------------------------------------------
+     2) METİN
+     --------------------------------------------------------------------- */
+  --lal-text-main: #F2F3F5;
+  --lal-text-muted: #8B8F98;
+  --lal-text-faint: #5B5F68;
+
+  /* ---------------------------------------------------------------------
+     3) ACCENT — tek marka rengi (SoftHydra turkuazı)
+     --------------------------------------------------------------------- */
+  --lal-accent: #3DDBD9;
+  --lal-accent-hover: #52E5E3;
+  --lal-accent-dim: #1F5957;
+  --lal-accent-glow: rgba(61, 219, 217, 0.16);
+  --lal-accent-glow-strong: rgba(61, 219, 217, 0.35);
+  --lal-accent-fg: #05201F;
+
+  /* ---------------------------------------------------------------------
+     4) SEMANTİK RENKLER — yalnızca 3 anlam rengi
+     --------------------------------------------------------------------- */
+  --lal-green: #34D399;
+  --lal-green-dim: rgba(52, 211, 153, 0.12);
+  --lal-red: #F0665A;
+  --lal-red-dim: rgba(240, 102, 90, 0.12);
+  --lal-amber: #E5A94F;
+  --lal-amber-dim: rgba(229, 169, 79, 0.12);
+
+  /* ---------------------------------------------------------------------
+     5) PAZARYERİ ETİKETLERİ — marka rengi DEĞİL, bilgi etiketi.
+     Semantik renklerle karıştırılmaz, kendi ad alanında durur.
+     Yeni pazaryeri eklendikçe (Amazon, N11, Shopify...) buraya eklenir.
+     --------------------------------------------------------------------- */
+  --lal-mp-trendyol: #F27A1A;
+  --lal-mp-trendyol-dim: rgba(242, 122, 26, 0.14);
+  --lal-mp-hepsiburada: #F5A623;
+  --lal-mp-hepsiburada-dim: rgba(245, 166, 35, 0.14);
+
+  /* ---------------------------------------------------------------------
+     6) TİPOGRAFİ
+     --------------------------------------------------------------------- */
+  --lal-font-display: 'Instrument Sans', 'Inter', sans-serif;
+  --lal-font-body: 'Inter', sans-serif;
+  --lal-font-mono: 'JetBrains Mono', monospace;
+
+  --lal-text-display-xl: 700 clamp(32px, 4vw, 56px) / 1.05 var(--lal-font-display);
+  --lal-text-h1: 600 20px/1.3 var(--lal-font-display);
+  --lal-text-h2: 600 15px/1.4 var(--lal-font-display);
+  --lal-text-body: 400 14.5px/1.5 var(--lal-font-body);
+  --lal-text-body-medium: 500 14.5px/1.5 var(--lal-font-body);
+  --lal-text-small: 500 13px/1.4 var(--lal-font-body);
+  --lal-text-micro: 600 10.5px/1.3 var(--lal-font-mono);
+
+  /* ---------------------------------------------------------------------
+     7) SPACING — 8px grid (temel birim 4px)
+     --------------------------------------------------------------------- */
+  --lal-space-1: 4px;
+  --lal-space-2: 8px;
+  --lal-space-3: 12px;
+  --lal-space-4: 16px;
+  --lal-space-5: 20px;
+  --lal-space-6: 24px;
+  --lal-space-8: 32px;
+  --lal-space-10: 40px;
+  --lal-space-12: 48px;
+  --lal-space-16: 64px;
+
+  /* ---------------------------------------------------------------------
+     8) RADIUS
+     --------------------------------------------------------------------- */
+  --lal-radius-sm: 6px;
+  --lal-radius-md: 10px;
+  --lal-radius-lg: 14px;
+  --lal-radius-xl: 20px;
+  --lal-radius-full: 999px;
+
+  /* ---------------------------------------------------------------------
+     9) ELEVATION / GÖLGE
+     --------------------------------------------------------------------- */
+  --lal-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --lal-shadow-2: 0 8px 20px -12px rgba(0, 0, 0, 0.55);
+  --lal-shadow-3: 0 24px 48px -24px rgba(0, 0, 0, 0.6);
+  --lal-glow-accent: 0 0 0 1px var(--lal-accent-glow);
+
+  /* ---------------------------------------------------------------------
+     10) MOTION
+     --------------------------------------------------------------------- */
+  --lal-ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --lal-ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --lal-dur-instant: 100ms;
+  --lal-dur-fast: 180ms;
+  --lal-dur-base: 300ms;
+  --lal-dur-slow: 550ms;
+
+  /* ---------------------------------------------------------------------
+     11) LAYOUT SABİTLERİ
+     --------------------------------------------------------------------- */
+  --lal-sidebar-w: 240px;
+  --lal-sidebar-w-collapsed: 72px;
+  --lal-topbar-h: 64px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --lal-dur-instant: 0ms;
+    --lal-dur-fast: 0ms;
+    --lal-dur-base: 0ms;
+    --lal-dur-slow: 0ms;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   12) SAYFA GEÇİŞLERİ (View Transitions API) — Faz 8.2
+   ---------------------------------------------------------------------
+   LAL Commerce OS bir Çok Sayfalı Uygulama (MPA): sidebar/topbar'daki bir
+   linke tıklandığında tarayıcı tam sayfa yeniliyor (React Router/SPA yok).
+   Aşağıdaki @view-transition kuralı, destekleyen tarayıcılarda (güncel
+   Chromium tabanlılar; Safari desteği kademeli yayılıyor) bu geçişi TEK
+   SATIR CSS'LE, hiçbir JavaScript yazmadan yumuşak bir cross-fade'e
+   çeviriyor. Desteklemeyen tarayıcılar bu at-rule'u anlamadıkları için
+   sessizce yok sayar ve site eskisi gibi anlık geçiş yapar — yani bu saf
+   bir progressive enhancement, davranış bozma riski YOK. Kasıtlı olarak
+   tek bir global root cross-fade ile sınırlı tutuldu (sayfa içindeki tek
+   tek elemanlara view-transition-name atayıp özel geçişler tasarlamak
+   -örn. sidebar sabit kalsın, sadece içerik değişsin- çok daha kırılgan
+   ve bu fazın "zorlama" notuyla çelişir).
+   --------------------------------------------------------------------- */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--lal-dur-base);
+  animation-timing-function: var(--lal-ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

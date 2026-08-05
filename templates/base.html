@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}LAL Commerce OS{% endblock %}</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<!-- LDL katman sırası önemli: token -> legacy köprü -> eski component'ler -> yeni component'ler -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/legacy-bridge.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/legacy.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/components.css') }}">
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<canvas id="ambient-bg" aria-hidden="true"></canvas>
+
+<div class="lal-app">
+  {% include "components/_sidebar.html" %}
+
+  <div class="lal-main">
+    {% include "components/_topbar.html" %}
+
+    <main class="lal-page-content">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+      Veriler doğrudan Trendyol Satıcı API'sinden çekilir. API bilgileriniz yalnızca bu bilgisayardaki .env dosyasında saklanır.
+    </footer>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/ui-effects.js') }}"></script>
+<!-- Faz 7.3: shell.js (config/sync/mp-switch/range — global çekirdek) ve
+     alerts.js (uyarı bandı) artık HER sayfada yükleniyor. Sayfa-özel
+     modüller (gosterge-paneli.js, urunler.js, siparisler.js,
+     finans-giderler.js, stock-settings.js, ayarlar-credentials.js,
+     payout-calendar.js) bunların TANIMLADIĞI global yardımcılara ve
+     'lal:data-refresh' event'ine güveniyor — bu yüzden ikisi de
+     page_scripts'ten ÖNCE yüklenmeli. -->
+<script src="{{ url_for('static', filename='js/shell.js') }}"></script>
+<script src="{{ url_for('static', filename='js/alerts.js') }}"></script>
+{% block page_scripts %}{% endblock %}
+</body>
+</html>
