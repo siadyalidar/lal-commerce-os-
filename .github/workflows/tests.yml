@@ -1,0 +1,48 @@
+name: Tests
+
+# Her push ve her pull request'te pytest'i çalıştırır.
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    # Testler şu an gerçek bir Redis bağlantısı gerektirmiyor (sync_lock.py
+    # mock'lanıyor/monkeypatch ile geçiliyor), ama sync_lock.py çalışma
+    # zamanında Redis'e bağlanıyor ve ileride Redis'e gerçekten bağlanan
+    # testler eklenebilir — bu yüzden CI'da bir Redis servisi hazır
+    # bulunduruyoruz (127.0.0.1:6379, uygulamanın REDIS_URL varsayılanıyla
+    # aynı adres/port).
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      REDIS_URL: redis://localhost:6379/0
+
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Bağımlılıkları kur
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: pytest çalıştır
+        run: pytest -q
