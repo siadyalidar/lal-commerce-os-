@@ -31,7 +31,7 @@
         <div class="hf-label">Bugünkü Satış</div>
         <div class="hf-value" id="hero-today-sales">–</div>
         <div class="hf-subrow">
-          <span class="hf-sublabel">Net Kazanç</span>
+          <span class="hf-sublabel" title="Bugün sipariş edilenlerin net kârı (komisyon, hizmet bedeli, kargo, stopaj, iade ve ürün maliyeti düşülmüş). Ayrı günlerde satılıp bugün hakedişi işlenen siparişleri içermez — bu yüzden her zaman Bugünkü Satış'tan küçük veya ona eşit olmalıdır.">Net Kazanç ⓘ</span>
           <span class="hf-subvalue" id="hero-today-net-profit">–</span>
         </div>
         <svg class="hero-wave" viewBox="0 0 260 20" preserveAspectRatio="none" aria-hidden="true">
@@ -84,7 +84,17 @@
   // shell.js'teki fmtTL global yardımcısına güveniyor (base.html'de bu
   // dosyadan ÖNCE yükleniyor). "Riskler/Fırsatlar" kartlarının gerçek
   // veriyle doldurulması Faz 7.4'te ekleniyor.
-  (function () {
+  //
+  // 06.08.2026 düzeltmesi: bu iki fetch eskiden yalnızca sayfa ilk açıldığında
+  // (tek seferlik IIFE içinde) çalışıyordu — "Verileri Senkronize Et"e
+  // basıldığında veya arka planda yeni sipariş geldiğinde HİÇ yenilenmiyordu,
+  // bu yüzden "Bugünkü Satış" ve "Net Kazanç" gün boyunca sayfa ilk
+  // açıldığındaki (eski) veriyle DONUK kalıyordu — Riskler/Fırsatlar kartları
+  // 'lal:alerts-updated' event'ini dinlediği için doğru güncelleniyordu ama
+  // bu ikisi dinlemiyordu. Artık fonksiyon haline getirilip hem sayfa
+  // açılışında hem de shell.js'in senkronizasyon sonrası fırlattığı
+  // 'lal:data-refresh' event'inde tekrar çağrılıyor.
+  function loadHeroSales() {
     var todayEl = document.getElementById('hero-today-sales');
     var monthEl = document.getElementById('hero-month-sales');
     if (todayEl && monthEl) {
@@ -132,6 +142,11 @@
         })
         .catch(function () { netProfitEl.textContent = '—'; });
     }
+  }
+
+  (function () {
+    loadHeroSales();
+    document.addEventListener('lal:data-refresh', loadHeroSales);
 
     fetch('/api/product-stock')
       .then(function (r) { return r.json(); })

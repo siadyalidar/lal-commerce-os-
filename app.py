@@ -1694,13 +1694,22 @@ def today_net_profit():
     tanımlı değilse netProfit BİLİNÇLİ OLARAK None döner (yarı-doğru bir
     rakam göstermek yerine) — frontend bu durumda '-' gösterir, çünkü o
     satırın kâr/zarar katkısı gerçekte bilinmiyor, netProfit toplamına
-    dahil edilmemiş oluyor ve rakam yanıltıcı olurdu."""
+    dahil edilmemiş oluyor ve rakam yanıltıcı olurdu.
+
+    06.08.2026 düzeltmesi: include_settlement_only=False geçiliyor. Aksi
+    halde compute_profit_summary, bugün settlement kaydı düşen ama SİPARİŞ
+    TARİHİ geçmiş bir güne ait satırlar için de sentetik satır ekliyordu —
+    bu da 'Bugünkü Net Kazanç'ın, sadece bugün sipariş edilenleri kapsayan
+    'Bugünkü Satış' (hero-today-sales / /api/daily-sales) rakamından daha
+    büyük çıkmasına (matematiksel olarak imkânsız görünmesine) yol açıyordu.
+    Artık ikisi de aynı tarih eksenini (order_date) kullanıyor."""
     now = datetime.now()
     start_of_day = datetime(now.year, now.month, now.day)
     end_of_day = start_of_day + timedelta(days=1)
 
     try:
-        summary = compute_profit_summary(start_dt=start_of_day, end_dt=end_of_day, marketplace_filter=None)
+        summary = compute_profit_summary(start_dt=start_of_day, end_dt=end_of_day, marketplace_filter=None,
+                                          include_settlement_only=False)
     except Exception as e:
         return jsonify({"error": f"Hesaplama hatası: {e}"}), 500
 

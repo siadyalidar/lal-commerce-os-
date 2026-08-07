@@ -351,13 +351,23 @@ def _sku_vat_rate(cost_row, side="cost"):
 # ANA HESAPLAMA
 # ============================================================
 
-def _gather_summary_inputs(start_ms, end_ms, marketplace_filter):
+def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlement_only=True):
     """DB'den bir kâr/zarar özeti için gereken TÜM ham veriyi tek bağlantı
     içinde okur ve (satırlar + yardımcı haritalar) olarak döner.
 
     ÖNEMLİ: settlement_totals_all TARİH SINIRSIZ okunur (bilinen order_lines'ı
     eşleştirmek için) — bkz. _load_settlement_lines docstring'i.
-    """
+
+    include_settlement_only: True ise (varsayılan, dönemsel raporlar için doğru
+    davranış), start_ms/end_ms aralığında settlement kaydı düşen ama SİPARİŞ
+    TARİHİ bu aralığın DIŞINDA olan (haftalar önce satılmış, hakedişi şimdi
+    işlenen) satırlar için sentetik satırlar üretilip 'lines'a eklenir.
+    False ise bu sentetik satırlar hiç eklenmez — 'lines' yalnızca sipariş
+    tarihi start_ms/end_ms aralığında olan gerçek siparişleri içerir.
+    'Bugünkü Net Kazanç' gibi 'bugünkü satış'la aynı tarih eksenine (order_date)
+    dayanması gereken, kısa/nokta aralıklı hesaplarda False kullanılmalı —
+    aksi halde geçmiş günlerin gecikmeli hakedişleri 'bugünün' kârına karışıp
+    net kâr rakamını aynı günün brüt satış rakamından bile büyük gösterebilir."""
     with get_connection() as conn:
         lines = list(_load_lines(conn, start_ms, end_ms))
         if marketplace_filter:
@@ -372,10 +382,11 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter):
         barcode_sku_map = _load_barcode_sku_map(conn)
 
     known_keys = {(ln["marketplace"], ln["shipment_package_id"], ln["barcode"]) for ln in lines}
-    settlement_only_lines = _build_settlement_only_lines(settlement_totals_in_range, known_keys, barcode_sku_map)
-    if marketplace_filter:
-        settlement_only_lines = [ln for ln in settlement_only_lines if ln["marketplace"] == marketplace_filter]
-    lines.extend(settlement_only_lines)
+    if include_settlement_only:
+        settlement_only_lines = _build_settlement_only_lines(settlement_totals_in_range, known_keys, barcode_sku_map)
+        if marketplace_filter:
+            settlement_only_lines = [ln for ln in settlement_only_lines if ln["marketplace"] == marketplace_filter]
+        lines.extend(settlement_only_lines)
 
     lines_per_order = defaultdict(int)
     for ln in lines:
@@ -586,13 +597,19 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
     return by_marketplace
 
 
-def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_filter=None):
+def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_filter=None,
+                            include_settlement_only=True):
     """marketplace_filter: None -> tüm pazaryerleri (=eski 'all'),
     'trendyol' veya 'hepsiburada' -> sadece o pazaryeri.
 
     ÖNEMLİ: 'all' artık ayrı bir motor DEĞİL — sadece filtre uygulanmamış
     hali. marketplace='trendyol' ile marketplace='all'in trendyol'a ait
     kısmı HER ZAMAN birebir aynı sayıyı üretir (aynı koddan geçiyor).
+
+    include_settlement_only: bkz. _gather_summary_inputs docstring'i. Varsayılan
+    True (mevcut/dönemsel rapor davranışı korunur). 'Bugünkü satış'la aynı
+    order_date eksenine dayanması gereken hesaplarda (örn. today_net_profit)
+    False geçilmeli.
 
     Bu fonksiyon dört alt adıma bölünmüştür (okunabilirlik/test edilebilirlik
     için, bkz. _gather_summary_inputs / _build_line_result /
@@ -603,7 +620,8 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
       4) Satır sonuçlarını pazaryeri bazında özetle
     """
     start_ms, end_ms = _resolve_range(days, start_dt, end_dt)
-    data = _gather_summary_inputs(start_ms, end_ms, marketplace_filter)
+    data = _gather_summary_inputs(start_ms, end_ms, marketplace_filter,
+                                   include_settlement_only=include_settlement_only)
     lines = data["lines"]
 
     line_results = []
