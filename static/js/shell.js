@@ -21,6 +21,25 @@ function safeText(id, val) { const el = document.getElementById(id); if (el) el.
 function safeDisplay(id, val) { const el = document.getElementById(id); if (el) el.style.display = val; }
 function onExist(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
 
+// ---------- Tema tercihi ----------
+// Aynı LAL kimliği koyu ve sıcak-açık yüzeyde çalışır; seçim cihazda saklanır.
+function applyTheme(theme) {
+  const isLight = theme === 'light';
+  document.documentElement.dataset.lalTheme = isLight ? 'light' : 'dark';
+  const btn = document.getElementById('lal-theme-toggle');
+  if (btn) {
+    btn.textContent = isLight ? 'Koyu tema' : 'Açık tema';
+    btn.setAttribute('aria-pressed', String(isLight));
+    btn.setAttribute('aria-label', isLight ? 'Koyu temaya geç' : 'Açık temaya geç');
+  }
+}
+applyTheme(localStorage.getItem('lal-theme') || 'dark');
+onExist('lal-theme-toggle', 'click', () => {
+  const next = document.documentElement.dataset.lalTheme === 'light' ? 'dark' : 'light';
+  localStorage.setItem('lal-theme', next);
+  applyTheme(next);
+});
+
 // ---------- Skeleton loading (Faz 8.1) ----------
 // Tablo satırları veri gelene kadar "Yükleniyor…" düz metni yerine bu
 // placeholder satırları gösteriyor. widths: her hücre için yaklaşık genişlik

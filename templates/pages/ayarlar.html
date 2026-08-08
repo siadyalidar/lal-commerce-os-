@@ -7,6 +7,11 @@
 {% endblock %}
 
 {% block content %}
+  <section class="lal-page-intro">
+    <p>Sistem ayarları</p>
+    <h1>Altyapın <strong>hazır ve güvende.</strong></h1>
+    <span>Pazaryeri bağlantılarını ve erişimlerini buradan yönet.</span>
+  </section>
   <div class="lal-panel">
     <h2 class="lal-panel-title">API Bağlantı Durumu</h2>
     <p class="panel-note">Bağlantı durumu üst bardaki etikette (<code>env-label</code>) gösterilir; sorun varsa sayfanın üstünde uyarı bandı çıkar.</p>
@@ -46,4 +51,3 @@
 {% block page_scripts %}
 <script src="{{ url_for('static', filename='js/ayarlar-credentials.js') }}"></script>
 {% endblock %}
-

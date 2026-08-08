@@ -19,40 +19,40 @@
   /* ---------------------------------------------------------------------
      1) NÖTR RENKLER — zemin / yüzey katmanları (derinlik hissi için 5 kademe)
      --------------------------------------------------------------------- */
-  --lal-bg: #0A0B0D;
-  --lal-bg-elevated: #101216;
-  --lal-surface: #15171C;
-  --lal-surface-2: #1B1E24;
-  --lal-surface-hover: #20232A;
-  --lal-border: #24272E;
-  --lal-border-soft: #1B1E24;
+  --lal-bg: #0c0d0e;
+  --lal-bg-elevated: #101113;
+  --lal-surface: #141618;
+  --lal-surface-2: #1b1d20;
+  --lal-surface-hover: #222529;
+  --lal-border: #393d40;
+  --lal-border-soft: #292c2f;
 
   /* ---------------------------------------------------------------------
      2) METİN
      --------------------------------------------------------------------- */
-  --lal-text-main: #F2F3F5;
-  --lal-text-muted: #8B8F98;
-  --lal-text-faint: #5B5F68;
+  --lal-text-main: #f1f2ef;
+  --lal-text-muted: #a0a5a8;
+  --lal-text-faint: #73797e;
 
   /* ---------------------------------------------------------------------
      3) ACCENT — tek marka rengi (SoftHydra turkuazı)
      --------------------------------------------------------------------- */
-  --lal-accent: #3DDBD9;
-  --lal-accent-hover: #52E5E3;
-  --lal-accent-dim: #1F5957;
-  --lal-accent-glow: rgba(61, 219, 217, 0.16);
-  --lal-accent-glow-strong: rgba(61, 219, 217, 0.35);
-  --lal-accent-fg: #05201F;
+  --lal-accent: #c12c3e;
+  --lal-accent-hover: #d64455;
+  --lal-accent-dim: #4a2028;
+  --lal-accent-glow: rgba(193, 44, 62, 0.16);
+  --lal-accent-glow-strong: rgba(193, 44, 62, 0.35);
+  --lal-accent-fg: #fff8f5;
 
   /* ---------------------------------------------------------------------
      4) SEMANTİK RENKLER — yalnızca 3 anlam rengi
      --------------------------------------------------------------------- */
-  --lal-green: #34D399;
-  --lal-green-dim: rgba(52, 211, 153, 0.12);
-  --lal-red: #F0665A;
-  --lal-red-dim: rgba(240, 102, 90, 0.12);
-  --lal-amber: #E5A94F;
-  --lal-amber-dim: rgba(229, 169, 79, 0.12);
+  --lal-green: #92d3a7;
+  --lal-green-dim: rgba(146, 211, 167, 0.12);
+  --lal-red: #ec7b80;
+  --lal-red-dim: rgba(236, 123, 128, 0.12);
+  --lal-amber: #dfbd75;
+  --lal-amber-dim: rgba(223, 189, 117, 0.12);
 
   /* ---------------------------------------------------------------------
      5) PAZARYERİ ETİKETLERİ — marka rengi DEĞİL, bilgi etiketi.
@@ -96,19 +96,19 @@
   /* ---------------------------------------------------------------------
      8) RADIUS
      --------------------------------------------------------------------- */
-  --lal-radius-sm: 6px;
-  --lal-radius-md: 10px;
-  --lal-radius-lg: 14px;
-  --lal-radius-xl: 20px;
+  --lal-radius-sm: 2px;
+  --lal-radius-md: 3px;
+  --lal-radius-lg: 4px;
+  --lal-radius-xl: 6px;
   --lal-radius-full: 999px;
 
   /* ---------------------------------------------------------------------
      9) ELEVATION / GÖLGE
      --------------------------------------------------------------------- */
-  --lal-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --lal-shadow-2: 0 8px 20px -12px rgba(0, 0, 0, 0.55);
-  --lal-shadow-3: 0 24px 48px -24px rgba(0, 0, 0, 0.6);
-  --lal-glow-accent: 0 0 0 1px var(--lal-accent-glow);
+  --lal-shadow-1: none;
+  --lal-shadow-2: 0 14px 32px -22px rgba(0, 0, 0, 0.8);
+  --lal-shadow-3: 0 24px 48px -28px rgba(0, 0, 0, 0.9);
+  --lal-glow-accent: inset 2px 0 0 var(--lal-accent);
 
   /* ---------------------------------------------------------------------
      10) MOTION
