@@ -103,8 +103,17 @@
         .then(function (data) {
           if (data.error || !data.daily) { todayEl.textContent = '—'; monthEl.textContent = '—'; return; }
           var daily = data.daily;
+          // DÜZELTME (08.08.2026): toISOString() UTC tarihi döndürür; TR (UTC+3)
+          // saatiyle gece yarısından sonraki ilk ~3 saatte bu, backend'in
+          // yerel-saat gün anahtarından bir gün geride kalıyor ve daily
+          // dizisinde eşleşen satır bulunamadığı için "Bugünkü Satış" 0
+          // görünüyordu — oysa /api/today-net-profit yerel saat kullandığı
+          // için doğru (ve sıfırdan büyük) dönüyordu, bu da matematiksel
+          // olarak imkânsız görünen "Satış=0, Net Kazanç>0" durumuna yol
+          // açıyordu. shell.js'teki paylaşılan localDateStr() (yerel tarih)
+          // kullanılıyor artık — backend'in gün anahtarıyla aynı eksende.
           var now = new Date();
-          var todayStr = now.toISOString().slice(0, 10);
+          var todayStr = localDateStr(now);
           var monthPrefix = todayStr.slice(0, 7);
           var todayRow = daily.find(function (d) { return (d.date || '').slice(0, 10) === todayStr; });
           var monthTotal = daily
@@ -162,8 +171,9 @@
 
     var today = new Date();
     var in7 = new Date(today.getTime() + 7 * 86400000);
-    var fmt = function (d) { return d.toISOString().slice(0, 10); };
-    fetch('/api/payout-calendar?start=' + fmt(today) + '&end=' + fmt(in7))
+    // Aynı UTC/yerel-saat karışıklığını önlemek için burada da localDateStr()
+    // kullanılıyor (bkz. loadHeroSales() içindeki 08.08.2026 düzeltmesi).
+    fetch('/api/payout-calendar?start=' + localDateStr(today) + '&end=' + localDateStr(in7))
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var el = document.getElementById('ai-upcoming-payments');
