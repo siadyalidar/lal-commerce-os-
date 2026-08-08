@@ -2,6 +2,104 @@
 {% block title %}Gösterge Paneli — LAL{% endblock %}
 {% block page_title %}Gösterge Paneli{% endblock %}
 
+{% block extra_css %}
+<style>
+/* GÖSTERGE PANELİ — Terminal / Bloomberg restyle */
+.lal-page-content {
+  background-image:
+    linear-gradient(var(--lal-border-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--lal-border-soft) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+.lal-topbar { border-bottom: 1px solid var(--lal-border); }
+.lal-topbar-title {
+  font-family: var(--lal-font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 15px;
+}
+.lal-topbar-title::before { content: '> '; color: var(--lal-accent); }
+
+.mp-switch { border-radius: 3px; border-color: var(--lal-border); }
+.mp-switch-btn {
+  font-family: var(--lal-font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mp-switch-btn.active { background: var(--lal-accent); color: var(--lal-accent-fg); }
+
+#range-select { border-radius: 3px; font-family: var(--lal-font-mono); font-size: 12px; }
+
+.lal-btn-primary {
+  border-radius: 3px;
+  font-family: var(--lal-font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+}
+
+.hero-stat {
+  background: var(--lal-surface);
+  border: 1px solid var(--lal-border);
+  border-radius: 3px;
+  border-top: 2px solid var(--lal-border);
+  padding: var(--lal-space-4);
+}
+.hero-stat::after { display: none; }
+.hero-stat:hover { transform: none; border-top-color: var(--lal-accent); box-shadow: none; }
+#net-profit-hero { border-top-color: var(--lal-accent); }
+#net-profit-hero.negative { border-top-color: var(--lal-red); }
+.hero-stat-label {
+  font-family: var(--lal-font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lal-text-faint);
+}
+.hero-stat-value { font-size: 25px; letter-spacing: -0.01em; }
+.hero-stat-icon { display: none; }
+
+.summary-grid {
+  gap: 1px;
+  background: var(--lal-border);
+  border: 1px solid var(--lal-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.summary-grid .card { background: var(--lal-surface); border: none; border-radius: 0; padding: var(--lal-space-3) var(--lal-space-4); }
+.summary-grid .card:hover { border: none; transform: none; background: var(--lal-surface-hover); box-shadow: none; }
+.summary-grid .label {
+  font-family: var(--lal-font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lal-text-faint);
+}
+.summary-grid .value { font-family: var(--lal-font-mono); font-size: 17px; }
+
+.panel { background: var(--lal-surface); backdrop-filter: none; border: 1px solid var(--lal-border); border-radius: 3px; box-shadow: none; }
+.panel:hover { border-color: var(--lal-border); box-shadow: none; }
+.panel h2 {
+  font-family: var(--lal-font-mono);
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.panel-note { font-family: var(--lal-font-mono); font-size: 11px; }
+
+table { font-family: var(--lal-font-mono); font-size: 12px; }
+th { font-family: var(--lal-font-mono); letter-spacing: 0.05em; }
+.table-scroll { border-radius: 3px; border-color: var(--lal-border); }
+
+.pill { border-radius: 3px; font-family: var(--lal-font-mono); font-size: 10.5px; text-transform: uppercase; }
+</style>
+{% endblock %}
+
 {% block content %}
   <div id="summary-loading" class="loading">Veriler yükleniyor…</div>
   <div id="summary-content" class="is-hidden">
