@@ -61,6 +61,39 @@ try:
 except ValueError:
     DATA_START_DATE = datetime.now() - timedelta(days=365 * 3)
 
+# --- 08.08.2026: Trendyol epoch-ms tarih alanları (orderDate, transactionDate,
+# paymentDate, claimDate) GERÇEK UTC epoch DEĞİL — Trendyol bunları Europe/Istanbul
+# yerel saatini DOĞRUDAN UTC epoch gibi kodlayarak döndürüyor. Örnek (doğrulanmış):
+# ham epoch=1786182470249 -> datetime.utcfromtimestamp() ile okunursa "09:47:50"
+# çıkıyor ve bu, Trendyol Satıcı Paneli'ndeki GERÇEK sipariş saatiyle (09:47) birebir
+# eşleşiyor; oysa GERÇEK UTC olsaydı Türkiye yerel saati bundan 3 saat ileride
+# (12:47) olurdu. Hepsiburada tarafı ise _hb_iso_to_epoch_ms() ile ISO string'i
+# `.timestamp()` üzerinden doğru şekilde GERÇEK UTC epoch'a çeviriyor. Bu iki farklı
+# "lehçe" tek bir order_date/transaction_date/payment_date sütununda karışınca:
+#   - Gösterim katmanı (shell.js fmtDateTime, new Date(ms) + tarayıcı yerel saati)
+#     Trendyol kayıtlarını 3 saat İLERİ gösteriyordu (HB için bu adım zaten doğruydu).
+#   - Filtre/aralık sınırları (.timestamp() ile kurulan start_ms/end_ms) Trendyol
+#     kayıtlarının SON ~3 saatini sorgudan sessizce DIŞLIYORDU (yeni siparişler
+#     "gelecekte" gibi görünüyordu).
+# Çözüm: Trendyol'dan gelen ham epoch'u DB'ye yazmadan önce burada normalize edip
+# HB ile aynı (gerçek UTC) formata çekiyoruz. Böylece downstream (display, SQL
+# tarih filtreleri, finance_engine bucketing) hiçbir özel durum kodu gerekmeden,
+# HB için zaten doğru çalıştığı gibi Trendyol için de doğru çalışır.
+_TRENDYOL_TZ_OFFSET_MS = 3 * 60 * 60 * 1000  # Europe/Istanbul = UTC+3
+
+
+def normalize_trendyol_epoch_ms(raw_ms):
+    """Trendyol'un ham epoch-ms alanını (orderDate/transactionDate/paymentDate/
+    claimDate) gerçek UTC epoch'a çevirir. None-safe. HB tarafına DOKUNULMAZ
+    (_hb_iso_to_epoch_ms zaten doğru dönüşümü yapıyor)."""
+    if raw_ms is None:
+        return None
+    try:
+        return int(raw_ms) - _TRENDYOL_TZ_OFFSET_MS
+    except (TypeError, ValueError):
+        return None
+
+
 BASE_URL = (
     "https://apigw.trendyol.com"
     if ENV == "PROD"
@@ -1130,7 +1163,7 @@ def get_daily_returns(days=30, start_dt=None, end_dt=None):
 
     daily = defaultdict(lambda: {"claim_count": 0, "item_count": 0})
     for c in all_claims:
-        claim_date_ms = c.get("claimDate") or c.get("orderDate")
+        claim_date_ms = normalize_trendyol_epoch_ms(c.get("claimDate") or c.get("orderDate"))
         if not claim_date_ms:
             continue
         day_key = datetime.fromtimestamp(claim_date_ms / 1000).strftime("%Y-%m-%d")
@@ -1165,7 +1198,7 @@ def sync_orders_to_db(start_dt, end_dt, progress_cb=None):
             "shipment_package_id": spid,
             "marketplace": "trendyol",
             "order_number": o.get("orderNumber"),
-            "order_date": o.get("orderDate"),
+            "order_date": normalize_trendyol_epoch_ms(o.get("orderDate")),
             "status": o.get("status"),
             "customer": f"{o.get('customerFirstName', '')} {o.get('customerLastName', '')}".strip(),
             "cargo_provider": o.get("cargoProviderName"),

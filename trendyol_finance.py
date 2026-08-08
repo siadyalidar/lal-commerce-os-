@@ -102,9 +102,10 @@ def _fetch_paginated(path, base_params, size=500):
 
 
 def _settlement_to_row(s):
+    from sync_core import normalize_trendyol_epoch_ms
     return {
         "id": str(s.get("id")),
-        "transaction_date": s.get("transactionDate"),
+        "transaction_date": normalize_trendyol_epoch_ms(s.get("transactionDate")),
         "barcode": s.get("barcode"),
         "transaction_type": s.get("_queried_type"),
         "raw_transaction_type": s.get("transactionType"),
@@ -118,15 +119,16 @@ def _settlement_to_row(s):
         "seller_revenue": s.get("sellerRevenue"),
         "order_number": s.get("orderNumber"),
         "payment_order_id": s.get("paymentOrderId"),
-        "payment_date": s.get("paymentDate"),
+        "payment_date": normalize_trendyol_epoch_ms(s.get("paymentDate")),
         "shipment_package_id": s.get("shipmentPackageId"),
     }
 
 
 def _other_financial_to_row(f):
+    from sync_core import normalize_trendyol_epoch_ms
     return {
         "id": str(f.get("id")),
-        "transaction_date": f.get("transactionDate"),
+        "transaction_date": normalize_trendyol_epoch_ms(f.get("transactionDate")),
         "barcode": f.get("barcode"),
         "transaction_type": f.get("_queried_type"),
         "raw_transaction_type": f.get("transactionType"),
@@ -137,7 +139,7 @@ def _other_financial_to_row(f):
         "credit": f.get("credit"),
         "order_number": f.get("orderNumber"),
         "payment_order_id": f.get("paymentOrderId"),
-        "payment_date": f.get("paymentDate"),
+        "payment_date": normalize_trendyol_epoch_ms(f.get("paymentDate")),
         "shipment_package_id": f.get("shipmentPackageId"),
     }
 
