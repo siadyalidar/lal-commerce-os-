@@ -112,23 +112,26 @@ def test_monthly_profit_invalid_start_date_returns_400(client):
 # bilgileri tanımlı olabilir. Testin bu duruma bağımlı olması (yani sadece
 # "ortamda kimlik bilgisi yoksa" varsayımıyla yazılması) TEHLİKELİ: kimlik
 # bilgileri tanımlıysa bu istek gerçekten arka planda CANLI API'ye senkron
-# başlatır. Bunun yerine app modülündeki kimlik bilgisi değişkenlerini
-# monkeypatch ile açıkça boşaltıyoruz — testler .env'de ne olursa olsun
-# deterministik ve YAN ETKİSİZ (gerçek ağ isteği atmadan) çalışır.
+# başlatır. Bunun yerine kimlik bilgisi değişkenlerini (artık sync_core.py'de
+# yaşıyorlar — bkz. Adım 3 blueprint refaktörü) monkeypatch ile açıkça
+# boşaltıyoruz — testler .env'de ne olursa olsun deterministik ve YAN
+# ETKİSİZ (gerçek ağ isteği atmadan) çalışır.
 
-def test_sync_finance_without_credentials_returns_400(client, flask_app, monkeypatch):
-    monkeypatch.setattr(flask_app, "SUPPLIER_ID", "")
-    monkeypatch.setattr(flask_app, "API_KEY", "")
-    monkeypatch.setattr(flask_app, "API_SECRET", "")
+def test_sync_finance_without_credentials_returns_400(client, monkeypatch):
+    import sync_core
+    monkeypatch.setattr(sync_core, "SUPPLIER_ID", "")
+    monkeypatch.setattr(sync_core, "API_KEY", "")
+    monkeypatch.setattr(sync_core, "API_SECRET", "")
     resp = client.post("/api/sync-finance", headers=auth_headers())
     assert resp.status_code == 400
     assert "error" in resp.get_json()
 
 
-def test_sync_hepsiburada_without_credentials_returns_400(client, flask_app, monkeypatch):
-    monkeypatch.setattr(flask_app, "HB_MERCHANT_ID", "")
-    monkeypatch.setattr(flask_app, "HB_USERNAME", "")
-    monkeypatch.setattr(flask_app, "HB_PASSWORD", "")
+def test_sync_hepsiburada_without_credentials_returns_400(client, monkeypatch):
+    import sync_core
+    monkeypatch.setattr(sync_core, "HB_MERCHANT_ID", "")
+    monkeypatch.setattr(sync_core, "HB_USERNAME", "")
+    monkeypatch.setattr(sync_core, "HB_PASSWORD", "")
     resp = client.post("/api/sync-hepsiburada", headers=auth_headers())
     assert resp.status_code == 400
     assert "error" in resp.get_json()
