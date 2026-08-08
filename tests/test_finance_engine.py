@@ -293,6 +293,81 @@ def test_compute_actual_payout_lag_days_below_threshold_returns_none(db):
     assert result["trendyol"]["sale"]["currentStaticValue"] == fe._AVG_PAYOUT_LAG_DAYS["trendyol"]["sale"]
 
 
+def test_today_net_profit_excludes_overhead_from_orders_outside_window(db):
+    """08.08.2026 REGRESYON TESTİ: 'bugünkü net kâr' (include_settlement_only=False)
+    hesaplanırken, bugün hiç sipariş olmasa bile GEÇMİŞ bir siparişe ait, bugün
+    işlenen bir iade kaydı overhead'e (ve net_profit'e) karışmamalı. Aksi halde
+    'Bugünkü Satış=0' iken 'Net Kazanç>0' gibi imkânsız görünen bir durum
+    oluşuyordu (bkz. finance_engine._load_return_totals docstring'i)."""
+    now = datetime.now()
+    start_of_today = datetime(now.year, now.month, now.day)
+    end_of_today = start_of_today + timedelta(days=1)
+    two_days_ago_ms = int((start_of_today - timedelta(days=2)).timestamp() * 1000)
+    today_ms = int((start_of_today + timedelta(hours=1)).timestamp() * 1000)
+
+    # Sipariş 2 gün önce verildi (BUGÜNÜN penceresinin dışında) -> bugünün
+    # 'lines' listesi boş kalacak.
+    upsert_orders([{
+        "shipment_package_id": 200, "marketplace": "trendyol", "order_number": "ONY1",
+        "order_date": two_days_ago_ms, "status": "Delivered", "customer": "Test",
+        "cargo_provider": "Aras", "gross_amount": 100.0, "discount_amount": 0.0, "net_amount": 100.0,
+    }])
+    upsert_order_lines([{
+        "shipment_package_id": 200, "marketplace": "trendyol", "barcode": "SKU-OLD",
+        "merchant_sku": "SKU-OLD", "product_name": "Eski Ürün", "quantity": 1,
+        "line_unit_price": 100.0, "commission_rate": 10.0,
+    }])
+    # O siparişin iadesi BUGÜN işleniyor (transaction_date = bugün), net kredi
+    # ağırlıklı (debt=0, credit=50) -> total = 0 - 50 = -50 (overhead'i negatife
+    # çekip net_profit'i yanlışlıkla pozitif gösterirdi, düzeltmeden önce).
+    upsert_settlements([_settlement_row(
+        id="ret1", marketplace="trendyol", barcode="SKU-OLD", shipment_package_id=200,
+        raw_transaction_type="İade", debt=0.0, credit=50.0,
+        order_number="ONY1", transaction_date=today_ms,
+    )])
+
+    summary = fe.compute_profit_summary(
+        start_dt=start_of_today, end_dt=end_of_today, marketplace_filter=None,
+        include_settlement_only=False,
+    )
+    t = summary["totals"]
+    assert t["grossProfit"] == pytest.approx(0.0)    # bugün hiç sipariş yok
+    assert t["overheadTotal"] == pytest.approx(0.0)   # geçmiş siparişin iadesi karışmamalı
+    assert t["netProfit"] == pytest.approx(0.0)
+    assert summary["by_marketplace"] == {}
+
+
+def test_periodic_report_still_includes_overhead_regardless_of_order_date(db):
+    """Dönemsel (varsayılan include_settlement_only=True) raporlarda davranış
+    DEĞİŞMEMELİ: aralıktaki TÜM iade kayıtları, siparişin o aralıkta verilip
+    verilmediğine bakılmaksızın sayılmaya devam etmeli (cash-flow görünümü) —
+    yukarıdaki 'bugünkü net kâr' düzeltmesi sadece include_settlement_only=False
+    olan çağrıları etkiler."""
+    now = datetime.now()
+    order_date_ms = int((now - timedelta(days=10)).timestamp() * 1000)  # aralığın DIŞINDA
+    tx_ms = int(now.timestamp() * 1000)  # ama iade aralığın İÇİNDE (bugün) işlendi
+
+    upsert_orders([{
+        "shipment_package_id": 201, "marketplace": "trendyol", "order_number": "ONY2",
+        "order_date": order_date_ms, "status": "Delivered", "customer": "Test",
+        "cargo_provider": "Aras", "gross_amount": 100.0, "discount_amount": 0.0, "net_amount": 100.0,
+    }])
+    upsert_order_lines([{
+        "shipment_package_id": 201, "marketplace": "trendyol", "barcode": "SKU-OLD2",
+        "merchant_sku": "SKU-OLD2", "product_name": "Eski Ürün 2", "quantity": 1,
+        "line_unit_price": 100.0, "commission_rate": 10.0,
+    }])
+    upsert_settlements([_settlement_row(
+        id="ret2", marketplace="trendyol", barcode="SKU-OLD2", shipment_package_id=201,
+        raw_transaction_type="İade", debt=0.0, credit=50.0,
+        order_number="ONY2", transaction_date=tx_ms,
+    )])
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")  # include_settlement_only=True (varsayılan)
+    assert summary["totals"]["overheadTotal"] == pytest.approx(-50.0)
+    assert summary["totals"]["netProfit"] == pytest.approx(-summary["totals"]["overheadTotal"])
+
+
 def test_compute_actual_payout_lag_days_computes_average(db):
     """min_sample_size karşılanınca gerçek ortalama gecikme hesaplanmalı."""
     rows = []

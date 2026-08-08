@@ -240,54 +240,79 @@ def _build_settlement_only_lines(settlement_totals_in_range, known_keys, barcode
     return synthetic
 
 
-def _load_return_totals(conn, start_ms, end_ms):
-    """marketplace -> iade tutarı (debt-credit netlenmiş), rapor aralığında."""
+def _load_return_totals(conn, start_ms, end_ms, order_scope=None):
+    """marketplace -> iade tutarı (debt-credit netlenmiş), rapor aralığında.
+
+    order_scope: None ise (varsayılan, dönemsel raporlar için doğru davranış)
+    aralıktaki (transaction_date bazlı) TÜM iade kayıtları sayılır — hangi
+    siparişe ait olduğuna bakılmaksızın (cash-flow görünümü).
+    Bir {(marketplace, shipment_package_id), ...} seti verilirse, SADECE bu
+    siparişlere ait iade kayıtları sayılır (order_date eksenine sadık
+    kalınması gereken kısa aralıklı hesaplarda, örn. 'bugünkü net kâr',
+    kullanılır — bkz. _gather_summary_inputs docstring'i, 08.08.2026
+    düzeltmesi)."""
     rows = conn.execute("""
-        SELECT marketplace, raw_transaction_type, COALESCE(SUM(debt), 0) AS debt_sum,
+        SELECT marketplace, shipment_package_id, raw_transaction_type,
+               COALESCE(SUM(debt), 0) AS debt_sum,
                COALESCE(SUM(credit), 0) AS credit_sum, COUNT(*) AS cnt
         FROM settlements
         WHERE transaction_date BETWEEN ? AND ?
-        GROUP BY marketplace, raw_transaction_type
+        GROUP BY marketplace, shipment_package_id, raw_transaction_type
     """, (start_ms, end_ms)).fetchall()
     totals = defaultdict(lambda: {"total": 0.0, "count": 0})
     for r in rows:
+        if order_scope is not None and (r["marketplace"], r["shipment_package_id"]) not in order_scope:
+            continue
         if _categorize(r["marketplace"], r["raw_transaction_type"]) == "return":
             totals[r["marketplace"]]["total"] += (r["debt_sum"] or 0) - (r["credit_sum"] or 0)
             totals[r["marketplace"]]["count"] += r["cnt"]
     return totals
 
 
-def _load_other_financial_totals(conn, start_ms, end_ms):
+def _load_other_financial_totals(conn, start_ms, end_ms, order_scope=None):
     """marketplace -> {transaction_type: net_tutar (debt-credit)}.
     ESKİ MOTORDAN FARK: artık sadece 'debt' değil, debt-credit netlemesi
     yapılıyor (bir kesinti sonradan iptal/düzeltilirse doğru yansısın diye).
+
+    order_scope: bkz. _load_return_totals docstring'i — verilirse sadece bu
+    siparişlere ait kayıtlar sayılır, order_number/shipment_package_id'si
+    olmayan (belirli bir siparişe bağlı olmayan, hesap seviyesi) kayıtlar
+    order_scope aktifken tamamen hariç tutulur.
     """
     rows = conn.execute("""
-        SELECT marketplace, transaction_type,
+        SELECT marketplace, shipment_package_id, transaction_type,
                COALESCE(SUM(debt), 0) - COALESCE(SUM(credit), 0) AS net_total,
                COALESCE(SUM(debt), 0) AS debt_total, COALESCE(SUM(credit), 0) AS credit_total
         FROM other_financials
         WHERE transaction_date BETWEEN ? AND ?
-        GROUP BY marketplace, transaction_type
+        GROUP BY marketplace, shipment_package_id, transaction_type
     """, (start_ms, end_ms)).fetchall()
     totals = defaultdict(dict)
     for r in rows:
-        totals[r["marketplace"]][r["transaction_type"]] = {
-            "net": r["net_total"], "debt": r["debt_total"], "credit": r["credit_total"],
-        }
+        if order_scope is not None and (r["marketplace"], r["shipment_package_id"]) not in order_scope:
+            continue
+        entry = totals[r["marketplace"]].setdefault(
+            r["transaction_type"], {"net": 0.0, "debt": 0.0, "credit": 0.0})
+        entry["net"] += r["net_total"] or 0.0
+        entry["debt"] += r["debt_total"] or 0.0
+        entry["credit"] += r["credit_total"] or 0.0
 
     # Kargo faturasi kalemlerini DeductionInvoices icinden ayirip cikariyoruz
     # (cargo_costs tablosundan satir bazinda zaten dusuluyor, cift saymamak icin).
     kargo_rows = conn.execute("""
-        SELECT marketplace, COALESCE(SUM(debt), 0) - COALESCE(SUM(credit), 0) AS net_total
+        SELECT marketplace, shipment_package_id,
+               COALESCE(SUM(debt), 0) - COALESCE(SUM(credit), 0) AS net_total
         FROM other_financials
         WHERE transaction_type = 'DeductionInvoices' AND transaction_date BETWEEN ? AND ?
           AND (lower(COALESCE(description, '')) LIKE '%kargo%'
                OR lower(COALESCE(raw_transaction_type, '')) LIKE '%kargo%')
-        GROUP BY marketplace
+        GROUP BY marketplace, shipment_package_id
     """, (start_ms, end_ms)).fetchall()
     for r in kargo_rows:
-        totals[r["marketplace"]]["_kargo_within_deduction_invoices"] = {"net": r["net_total"]}
+        if order_scope is not None and (r["marketplace"], r["shipment_package_id"]) not in order_scope:
+            continue
+        entry = totals[r["marketplace"]].setdefault("_kargo_within_deduction_invoices", {"net": 0.0})
+        entry["net"] += r["net_total"] or 0.0
     return totals
 
 
@@ -361,13 +386,22 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
     include_settlement_only: True ise (varsayılan, dönemsel raporlar için doğru
     davranış), start_ms/end_ms aralığında settlement kaydı düşen ama SİPARİŞ
     TARİHİ bu aralığın DIŞINDA olan (haftalar önce satılmış, hakedişi şimdi
-    işlenen) satırlar için sentetik satırlar üretilip 'lines'a eklenir.
-    False ise bu sentetik satırlar hiç eklenmez — 'lines' yalnızca sipariş
-    tarihi start_ms/end_ms aralığında olan gerçek siparişleri içerir.
+    işlenen) satırlar için sentetik satırlar üretilip 'lines'a eklenir. Ayrıca
+    overhead (iade/stopaj/platform bedeli) aralıktaki TÜM settlement/
+    other_financials kayıtlarından hesaplanır (cash-flow görünümü) — hangi
+    siparişe ait olduğuna bakılmaksızın.
+    False ise: bu sentetik satırlar hiç eklenmez — 'lines' yalnızca sipariş
+    tarihi start_ms/end_ms aralığında olan gerçek siparişleri içerir. AYRICA
+    (08.08.2026 düzeltmesi) overhead de aynı şekilde daraltılır: SADECE bu
+    aralıktaki siparişlere (lines'taki shipment_package_id'ler) bağlı iade/
+    stopaj/platform bedeli kayıtları sayılır. Aksi halde — sentetik satır
+    eklenmese bile — geçmiş bir siparişin bugün işlenen bir iade/stopaj
+    düzeltmesi hâlâ overhead'e (ve dolayısıyla net_profit'e) karışabiliyordu;
+    özellikle 'lines' boşken (o gün hiç sipariş yoksa) bu net kârın sıfırdan
+    farklı (hatta pozitif) görünmesine yol açıyordu — 'Bugünkü Satış=0 ama
+    Net Kazanç>0' gibi imkânsız görünen bir duruma neden oluyordu.
     'Bugünkü Net Kazanç' gibi 'bugünkü satış'la aynı tarih eksenine (order_date)
-    dayanması gereken, kısa/nokta aralıklı hesaplarda False kullanılmalı —
-    aksi halde geçmiş günlerin gecikmeli hakedişleri 'bugünün' kârına karışıp
-    net kâr rakamını aynı günün brüt satış rakamından bile büyük gösterebilir."""
+    dayanması gereken, kısa/nokta aralıklı hesaplarda False kullanılmalı."""
     with get_connection() as conn:
         lines = list(_load_lines(conn, start_ms, end_ms))
         if marketplace_filter:
@@ -375,8 +409,13 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
 
         settlement_totals_all = _load_settlement_lines(conn)
         settlement_totals_in_range = _load_settlement_lines(conn, start_ms, end_ms)
-        return_totals = _load_return_totals(conn, start_ms, end_ms)
-        other_totals = _load_other_financial_totals(conn, start_ms, end_ms)
+
+        order_scope = None
+        if not include_settlement_only:
+            order_scope = {(ln["marketplace"], ln["shipment_package_id"]) for ln in lines}
+
+        return_totals = _load_return_totals(conn, start_ms, end_ms, order_scope=order_scope)
+        other_totals = _load_other_financial_totals(conn, start_ms, end_ms, order_scope=order_scope)
         costs = _load_costs(conn)
         cargo_by_spid, cargo_by_order_number = _load_cargo_by_order(conn)
         barcode_sku_map = _load_barcode_sku_map(conn)
