@@ -161,22 +161,25 @@
 
     if (window.ChartDataLabels) { Chart.register(ChartDataLabels); Chart.defaults.set('plugins.datalabels', { display: false }); }
 
+    const lastIdx = revenueData.length - 1;
+
     monthlyProfitChart = new Chart(ctx, {
       data: {
         labels,
         datasets: [
-          { type: 'bar', label: 'Ciro', data: revenueData, backgroundColor: revenueGrad, borderColor: '#C9CDD3', borderWidth: 1.25, borderRadius: 5, borderSkipped: false, order: 3, barPercentage: 0.6, categoryPercentage: 0.7,
-            datalabels: { display: true, anchor: 'end', align: 'end', offset: 2, color: '#C9CDD3', font: { size: 10, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
-          { type: 'bar', label: 'Brüt Kâr', data: grossProfitData, backgroundColor: grossGrad, borderColor: '#3DDBD9', borderWidth: 1.25, borderRadius: 5, borderSkipped: false, order: 2, barPercentage: 0.6, categoryPercentage: 0.7,
-            datalabels: { display: true, anchor: 'end', align: 'end', offset: 2, color: '#3DDBD9', font: { size: 10, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
-          { type: 'line', label: 'Net Kâr', data: netProfitData, borderColor: '#34D399', backgroundColor: netFillGrad, borderWidth: 2.5, tension: 0.35, fill: true, order: 1, pointRadius: 3.5, pointHoverRadius: 7, pointBackgroundColor: '#34D399', pointBorderColor: '#0A0B0D', pointBorderWidth: 2,
-            datalabels: { display: true, anchor: 'end', align: 'top', offset: 6, color: '#34D399', font: { size: 10, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
-          { type: 'line', label: 'Gerçek Net Kâr (sabit giderler dahil)', data: realNetProfitData, borderColor: '#F59E0B', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4], tension: 0.35, fill: false, order: 0, pointRadius: 3.5, pointHoverRadius: 7, pointBackgroundColor: '#F59E0B', pointBorderColor: '#0A0B0D', pointBorderWidth: 2,
-            datalabels: { display: true, anchor: 'end', align: 'bottom', offset: 6, color: '#F59E0B', font: { size: 10, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
+          { type: 'bar', label: 'Ciro', data: revenueData, backgroundColor: revenueGrad, borderColor: '#C9CDD3', borderWidth: 1.25, borderRadius: 5, borderSkipped: false, order: 3, barPercentage: 0.62, categoryPercentage: 0.72,
+            datalabels: { display: true, anchor: 'end', align: 'end', offset: 4, clamp: true, color: '#C9CDD3', font: { size: 10, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
+          { type: 'bar', label: 'Brüt Kâr', data: grossProfitData, backgroundColor: grossGrad, borderColor: '#3DDBD9', borderWidth: 1.25, borderRadius: 5, borderSkipped: false, order: 2, barPercentage: 0.62, categoryPercentage: 0.72,
+            datalabels: { display: false } },
+          { type: 'line', label: 'Net Kâr', data: netProfitData, borderColor: '#34D399', backgroundColor: netFillGrad, borderWidth: 2.5, tension: 0.35, fill: true, order: 1, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#34D399', pointBorderColor: '#0A0B0D', pointBorderWidth: 2, clip: false,
+            datalabels: { display: (c) => c.dataIndex === lastIdx, anchor: 'end', align: 'right', offset: 8, clamp: true, color: '#34D399', font: { size: 11, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
+          { type: 'line', label: 'Gerçek Net Kâr (sabit giderler dahil)', data: realNetProfitData, borderColor: '#F59E0B', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4], tension: 0.35, fill: false, order: 0, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#F59E0B', pointBorderColor: '#0A0B0D', pointBorderWidth: 2, clip: false,
+            datalabels: { display: (c) => c.dataIndex === lastIdx, anchor: 'start', align: 'right', offset: 8, clamp: true, color: '#F59E0B', font: { size: 11, weight: '700', family: "'Inter', sans-serif" }, formatter: (v) => tlFmt.format(v) } },
         ]
       },
       options: {
         maintainAspectRatio: false,
+        layout: { padding: { top: 26, right: 96, bottom: 4, left: 4 } },
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { position: 'top', align: 'end', labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 18, font: { size: 12.5, family: "'Inter', sans-serif" }, color: '#C9CDD3' } },
