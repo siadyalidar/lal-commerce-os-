@@ -32,6 +32,10 @@ function applyTheme(theme) {
     btn.setAttribute('aria-pressed', String(isLight));
     btn.setAttribute('aria-label', isLight ? 'Koyu temaya geç' : 'Açık temaya geç');
   }
+  // Canvas tabanlı grafikler CSS değişkenlerini otomatik izleyemez (renkler JS'e
+  // string olarak geçiyor) — tema değiştiğinde ilgilenen component'ler bu event'i
+  // dinleyip kendi renklerini yeniden okuyabilir. Dinleyici yoksa hiçbir etkisi yok.
+  document.dispatchEvent(new CustomEvent('lal:theme-change', { detail: { theme: isLight ? 'light' : 'dark' } }));
 }
 applyTheme(localStorage.getItem('lal-theme') || 'dark');
 onExist('lal-theme-toggle', 'click', () => {

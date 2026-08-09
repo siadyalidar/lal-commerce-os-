@@ -3,6 +3,7 @@
 {% block page_title %}Gösterge Paneli{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/monthly-profit-chart.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -63,10 +64,20 @@
 
     <!-- === AYLIK KÂR TRENDİ === -->
     <div class="panel">
-      <h2>Aylık Kâr Trendi</h2>
-      <p class="panel-note">Verinin başlangıcından bugüne, ay ay ciro, brüt kâr ve net kâr. Bu grafik yukarıdaki tarih filtresinden bağımsızdır — her zaman tüm geçmişi gösterir.</p>
+      <div class="mpc-head">
+        <div>
+          <h2>Aylık Kâr Trendi</h2>
+          <p class="panel-note">Verinin başlangıcından bugüne, ay ay ciro, brüt kâr ve net kâr. Bu grafik yukarıdaki tarih filtresinden bağımsızdır — her zaman tüm geçmişi gösterir.</p>
+        </div>
+        <div class="mpc-head-right">
+          <span id="monthlyProfitInProgressBadge" class="mpc-badge is-hidden"></span>
+          <div id="monthlyProfitMetricSelector" class="mpc-selector"></div>
+        </div>
+      </div>
       <div id="monthly-loading" class="loading loading-sm">Yükleniyor…</div>
-      <div id="monthlyProfitChartWrap" class="is-hidden"><canvas id="monthlyProfitChart"></canvas></div>
+      <div id="monthlyProfitChartWrap" class="mpc-chart-wrap is-hidden">
+        <canvas id="monthlyProfitChart"></canvas>
+      </div>
     </div>
   </div>
 

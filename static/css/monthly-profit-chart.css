@@ -1,0 +1,132 @@
+/* ============================================================================
+   AYLIK KÂR TRENDİ — grafik-özel stiller
+   ----------------------------------------------------------------------------
+   Sadece bu component'e ait. Tamamen tokens.css değişkenlerinden türetilmiştir;
+   ham hex/px değeri barındırmaz (grafik legend nokta renkleri hariç — onlar
+   JS'te aynı --lal-* token'larından hesaplanıp inline stil olarak yazılır).
+   Dark/light farkı burada tanımlanmaz; tokens zaten html[data-lal-theme] ile
+   değişir, bu dosya sadece o token'ları tüketir.
+   ============================================================================ */
+
+.mpc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--lal-space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--lal-space-4);
+}
+.mpc-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--lal-space-3);
+  flex-wrap: wrap;
+}
+
+/* ---------- Metrik seçici (klasik Chart.js legend'in yerini alır) ---------- */
+.mpc-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lal-space-2);
+}
+.mpc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--lal-border-soft);
+  border-radius: var(--lal-radius-full);
+  background: transparent;
+  color: var(--lal-text-muted);
+  font: var(--lal-text-small);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.2;
+  transition: background var(--lal-dur-fast) var(--lal-ease-out),
+              color var(--lal-dur-fast) var(--lal-ease-out),
+              border-color var(--lal-dur-fast) var(--lal-ease-out),
+              opacity var(--lal-dur-fast) var(--lal-ease-out);
+}
+.mpc-chip:hover { border-color: var(--lal-border); color: var(--lal-text-main); }
+.mpc-chip.is-active { background: var(--lal-surface-2); color: var(--lal-text-main); border-color: var(--lal-border); }
+.mpc-chip.is-off { opacity: .4; }
+.mpc-chip-dot { width: 7px; height: 7px; border-radius: var(--lal-radius-full); flex-shrink: 0; }
+
+/* ---------- "Devam ediyor" rozeti (mevcut ay henüz tamamlanmadıysa) ---------- */
+.mpc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--lal-radius-full);
+  background: var(--lal-amber-dim);
+  color: var(--lal-amber);
+  font: var(--lal-text-micro);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.mpc-badge::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: var(--lal-radius-full);
+  background: currentColor;
+  animation: mpc-pulse 1.7s ease-in-out infinite;
+}
+@keyframes mpc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) {
+  .mpc-badge::before { animation: none; }
+}
+
+/* ---------- Grafik alanı + özel tooltip konteyneri ---------- */
+.mpc-chart-wrap {
+  position: relative;
+  height: 340px;
+}
+.mpc-chart-wrap canvas { position: relative; z-index: 1; }
+
+.mpc-tooltip {
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 5;
+  min-width: 216px;
+  background: var(--lal-surface);
+  border: 1px solid var(--lal-border-soft);
+  border-radius: var(--lal-radius-lg);
+  box-shadow: var(--lal-shadow-2);
+  padding: var(--lal-space-3) var(--lal-space-4);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, calc(-100% - 14px));
+  transition: opacity var(--lal-dur-fast) var(--lal-ease-out);
+}
+.mpc-tooltip.is-visible { opacity: 1; }
+.mpc-tooltip-title {
+  font: var(--lal-text-small);
+  font-weight: 600;
+  color: var(--lal-text-main);
+  margin-bottom: var(--lal-space-2);
+}
+.mpc-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lal-space-4);
+  padding: 2.5px 0;
+  font-size: 13px;
+}
+.mpc-tooltip-label { display: inline-flex; align-items: center; gap: 7px; color: var(--lal-text-muted); }
+.mpc-tooltip-dot { width: 7px; height: 7px; border-radius: var(--lal-radius-full); flex-shrink: 0; }
+.mpc-tooltip-value {
+  font-family: var(--lal-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--lal-text-main);
+  font-weight: 600;
+}
+.mpc-tooltip-divider { border-top: 1px solid var(--lal-border-soft); margin: var(--lal-space-2) 0; }
+.mpc-tooltip-margins { display: flex; flex-direction: column; gap: 2px; }
+.mpc-tooltip-margin { font-size: 11.5px; color: var(--lal-text-faint); display: flex; justify-content: space-between; gap: var(--lal-space-3); }
+
+@media (max-width: 720px) {
+  .mpc-chart-wrap { height: 280px; }
+  .mpc-tooltip { min-width: 180px; }
+}
