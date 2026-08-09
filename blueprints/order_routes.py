@@ -18,9 +18,55 @@ from flask import Blueprint, jsonify, request
 
 from database import get_connection
 from finance_engine import best_sellers as compute_best_sellers
+from finance_engine import compute_profit_summary
 from sync_core import DATA_START_DATE, _check_credentials, _resolve_sync_range, get_daily_returns
 
 bp = Blueprint("order_routes", __name__)
+
+
+# --- 09.08.2026: Sipariş listesinde sipariş bazlı Net Kâr ---
+# finance_engine.compute_profit_summary() SATIR bazlı 'profit' üretiyor
+# (bir siparişte birden fazla ürün/barkod olabileceği için). Bu fonksiyon
+# o satırları (marketplace, orderNumber) bazında toplayıp tek bir sipariş
+# için tek bir net kâr rakamı üretir.
+#
+# NOT: line_results içinde 'shipmentPackageId' alanı YOK (sadece
+# 'orderNumber' var, bkz. finance_engine.py compute_profit_summary), bu
+# yüzden eşleştirme orders tablosundaki order_number üzerinden yapılıyor
+# (marketplace + order_number birlikte, aynı sipariş numarası teorik olarak
+# iki pazaryerinde çakışabilir diye marketplace de anahtara dahil).
+#
+# 'profitEstimated': o siparişin en az bir satırı henüz gerçek settlement
+# kaydına sahip değilse (finance_engine'in 'estimated' bayrağı) True olur —
+# yani rakam Trendyol/HB'nin finans API'sinden gelen gerçek hakediş yerine
+# satır fiyatı × tahmini komisyon oranıyla hesaplanmış demektir.
+# 'profitMissingCost': en az bir satırda ürün maliyeti (product_costs) tanımlı
+# değilse True olur — bu durumda o siparişin profit'i None (bilinmiyor) kalır,
+# yanlışlıkla eksik bir rakam gösterilmez.
+def _build_order_profit_map(start_dt, end_dt, marketplace_filter=None):
+    summary = compute_profit_summary(start_dt=start_dt, end_dt=end_dt, marketplace_filter=marketplace_filter)
+
+    agg = defaultdict(lambda: {"profit": 0.0, "hasEstimatedSettlement": False, "hasMissingCost": False})
+    for ln in summary["lines"]:
+        order_number = ln.get("orderNumber")
+        if not order_number:
+            continue
+        key = (ln["marketplace"], order_number)
+        a = agg[key]
+        if ln.get("missingCost"):
+            a["hasMissingCost"] = True
+        elif ln.get("profit") is not None:
+            a["profit"] += ln["profit"]
+        if ln.get("estimated"):
+            a["hasEstimatedSettlement"] = True
+
+    result = {}
+    for key, a in agg.items():
+        result[key] = {
+            "netProfit": None if a["hasMissingCost"] else round(a["profit"], 2),
+            "profitEstimated": a["hasEstimatedSettlement"],
+        }
+    return result
 
 
 @bp.route("/api/daily-sales")
@@ -176,6 +222,7 @@ def api_orders():
     offset = (page - 1) * page_size
 
     marketplace = (args.get("marketplace") or "").strip().lower()
+    mp_filter = marketplace if marketplace in ("trendyol", "hepsiburada") else None
 
     where = ["order_date BETWEEN ? AND ?"]
     params = [start_ms, end_ms]
@@ -185,9 +232,9 @@ def api_orders():
     if q:
         where.append("(order_number LIKE ? OR customer LIKE ?)")
         params.extend([f"%{q}%", f"%{q}%"])
-    if marketplace in ("trendyol", "hepsiburada"):
+    if mp_filter:
         where.append("marketplace = ?")
-        params.append(marketplace)
+        params.append(mp_filter)
     where_sql = " AND ".join(where)
 
     with get_connection() as conn:
@@ -220,8 +267,22 @@ def api_orders():
                     "commissionRate": ln["commission_rate"],
                 })
 
+    # DÜZELTME (09.08.2026): sipariş bazlı Net Kâr — bkz. _build_order_profit_map
+    # docstring'i. Sadece BU SAYFADAKİ (page/page_size ile sınırlı) siparişler
+    # için değil, tüm istenen tarih aralığı için hesaplanıyor çünkü
+    # compute_profit_summary zaten aralık bazlı çalışıyor; burada sadece
+    # sayfadaki siparişlere lookup yapılıyor (fazladan hesaplama yok, tek
+    # bir compute_profit_summary çağrısı sayfa başına yeterli).
+    try:
+        profit_map = _build_order_profit_map(start_dt, end_dt, marketplace_filter=mp_filter)
+    except Exception:
+        # Kâr hesaplaması patlarsa (örn. eksik veri) sipariş listesinin
+        # tamamı görünmez olmasın — netProfit alanları None kalır.
+        profit_map = {}
+
     orders = []
     for r in order_rows:
+        profit_info = profit_map.get((r["marketplace"], r["order_number"]), {})
         orders.append({
             "shipmentPackageId": r["shipment_package_id"],
             "orderNumber": r["order_number"],
@@ -234,6 +295,8 @@ def api_orders():
             "netAmount": r["net_amount"],
             "marketplace": r["marketplace"],
             "lines": lines_by_spid.get((r["marketplace"], r["shipment_package_id"]), []),
+            "netProfit": profit_info.get("netProfit"),
+            "profitEstimated": profit_info.get("profitEstimated", False),
         })
 
     return jsonify({

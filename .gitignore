@@ -17,3 +17,7 @@ uploads/
 .DS_Store
 .idea/
 .vscode/
+
+# Git patch dosyaları ve DB yedekleri repo'ya dahil edilmez
+*.patch
+*.db.bak-*

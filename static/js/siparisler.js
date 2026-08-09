@@ -8,6 +8,7 @@
 
   let currentPage = 1;
   const PAGE_SIZE = 50;
+  const ORDER_COLUMN_COUNT = 9; // ▸, Tarih, Sipariş No, Pazaryeri, Müşteri, Durum, Kargo, Net Tutar, Net Kâr
 
   function marketplaceBadge(marketplace) {
     // Faz 8.4: eskiden burada legacy .mp-badge/.mp-trendyol/.mp-hepsiburada
@@ -29,6 +30,24 @@
     };
     const [cls, label] = map[status] || ['pill-other', status || '—'];
     return `<span class="pill ${cls}">${label}</span>`;
+  }
+
+  // DÜZELTME (09.08.2026): sipariş bazlı Net Kâr hücresi.
+  // - netProfit null ise (ör. ürün maliyeti tanımlı değil) '—' gösterilir,
+  //   sessizce 0 gibi davranıp yanıltmaz (bkz. order_routes.py profitMissingCost).
+  // - profitEstimated true ise (gerçek settlement henüz oluşmamış, tahmini
+  //   komisyonla hesaplanmış) rakamın yanına '~' ön eki ve bir tooltip eklenir —
+  //   dashboard'daki "tahmini komisyonla hesaplandı" uyarısıyla tutarlı.
+  function netProfitCell(o) {
+    if (o.netProfit === null || o.netProfit === undefined) {
+      return '<span style="color:var(--text-muted);" title="Bu sipariş için ürün maliyeti tanımlı değil, kâr hesaplanamıyor.">—</span>';
+    }
+    const cls = o.netProfit > 0 ? 'lal-profit-pos' : (o.netProfit < 0 ? 'lal-profit-neg' : '');
+    const prefix = o.profitEstimated ? '~' : '';
+    const title = o.profitEstimated
+      ? 'Tahmini: bu sipariş için Finans API\'de henüz gerçek settlement kaydı yok, satır fiyatı ve tahmini komisyon oranıyla hesaplandı.'
+      : 'Gerçek: Finans API settlement kaydına göre hesaplandı.';
+    return `<span class="${cls}" title="${title}">${prefix}${fmtTL2(o.netProfit)}</span>`;
   }
 
   function renderOrderLines(lines) {
@@ -54,7 +73,7 @@
   function renderOrders(orders) {
     const tbody = document.getElementById('orders-tbody');
     if (!orders.length) {
-      tbody.innerHTML = emptyStateRow(8, 'Bu aralıkta sipariş bulunamadı.');
+      tbody.innerHTML = emptyStateRow(ORDER_COLUMN_COUNT, 'Bu aralıkta sipariş bulunamadı.');
       return;
     }
     tbody.innerHTML = orders.map((o, i) => `
@@ -67,9 +86,10 @@
         <td>${statusPill(o.status)}</td>
         <td>${o.cargoProvider || '—'}</td>
         <td>${fmtTL2(o.netAmount)}</td>
+        <td>${netProfitCell(o)}</td>
       </tr>
       <tr class="detail-row" id="detail-${i}">
-        <td colspan="8"><div class="detail-inner">${renderOrderLines(o.lines)}</div></td>
+        <td colspan="${ORDER_COLUMN_COUNT}"><div class="detail-inner">${renderOrderLines(o.lines)}</div></td>
       </tr>
     `).join('');
 
@@ -100,7 +120,7 @@
     // gerçek satırların şekline yakın iskelet (skeleton) satırlar koyuyoruz.
     safeDisplay('orders-loading', 'none');
     safeDisplay('orders-table-wrap', 'block');
-    document.getElementById('orders-tbody').innerHTML = skeletonTableRows(8, 6, [4, 16, 14, 10, 14, 10, 12, 10]);
+    document.getElementById('orders-tbody').innerHTML = skeletonTableRows(ORDER_COLUMN_COUNT, 6, [4, 16, 14, 10, 14, 10, 12, 10, 10]);
     document.getElementById('pagination').classList.add('is-hidden');
     hideError();
 
@@ -118,7 +138,7 @@
       const data = await res.json();
       if (data.error) {
         showError(data.error);
-        document.getElementById('orders-tbody').innerHTML = errorStateRow(8, data.error);
+        document.getElementById('orders-tbody').innerHTML = errorStateRow(ORDER_COLUMN_COUNT, data.error);
         return;
       }
       renderOrders(data.orders);
@@ -126,7 +146,7 @@
       renderPagination(data.total, data.page, data.page_size);
     } catch (e) {
       showError('Beklenmeyen bir hata oluştu: ' + e.message);
-      document.getElementById('orders-tbody').innerHTML = errorStateRow(8, e.message);
+      document.getElementById('orders-tbody').innerHTML = errorStateRow(ORDER_COLUMN_COUNT, e.message);
     }
   }
 
