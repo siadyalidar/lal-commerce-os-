@@ -14,13 +14,18 @@ hesabı üretir.
 
 ## Öne Çıkan Özellikler
 
-- **Çoklu pazaryeri desteği** — Trendyol (canlı) ve Hepsiburada (SIT/test
-  aşamasında) sipariş, iade ve settlement verilerinin tek veritabanında
-  birleştirilmesi.
+- **Çoklu pazaryeri desteği** — Trendyol (canlı) ve Hepsiburada (canlı/PROD)
+  sipariş, iade ve settlement verilerinin tek veritabanında birleştirilmesi.
+  Hepsiburada tarafında hem paketlenmiş (`/packages`) hem de henüz
+  "Paketlenecek" kuyruğunda duran paketlenmemiş (`/orders`) siparişler
+  ayrı ayrı çekilip birleştirilir — sadece paketlenmiş kayıtlara bakan bir
+  entegrasyon, panelde görünen aktif siparişlerin büyük kısmını kaçırır.
 - **Gerçek kâr/zarar motoru** (`finance_engine.py`) — komisyon, kargo,
   iade, sabit giderler ve KDV dahil edilerek ürün/gün/ay bazında net kâr
   hesaplanır; henüz settlement'ı oluşmamış siparişler için tahmini gelirle
-  düzeltme yapılır.
+  düzeltme yapılır. Sipariş listesinde de her satır için tek bir **Net
+  Kâr** kolonu gösterilir (aynı siparişteki birden fazla ürün satırı
+  sipariş numarası bazında toplanarak tek rakama indirgenir).
 - **Ödeme takvimi (payout calendar)** — pazaryerlerinin ödeme tarihlerini
   esas alan, resmi verilerle override edilebilen tahmini nakit akışı.
 - **Asenkron senkronizasyon** — Celery + Redis ile arka planda veri çekme;
@@ -62,8 +67,8 @@ zamanlanmış görevler için) sürecinin de çalışıyor olması gerekir.
 - Python 3.10+
 - Redis (Celery broker/backend için)
 - Trendyol Satıcı hesabı ve API kimlik bilgileri
-- (Opsiyonel) Hepsiburada Merchant hesabı — entegrasyon henüz test/SIT
-  aşamasında
+- (Opsiyonel) Hepsiburada Merchant hesabı — canlı (PROD) API kimlik
+  bilgileriyle test edilmiştir
 
 ## Kurulum
 
@@ -162,8 +167,9 @@ payout DB'si ve HTTP istemcisi için kapsamlı senaryolar içerir
   uygulanma özetini içerir (credential şifreleme, Celery'ye geçiş, panel
   auth fail-open düzeltmesi vb.).
 - `KALAN_ADIMLAR.md` — gerçek Hepsiburada kimlik bilgileriyle elle
-  doğrulanması gereken adımları listeler (bu geliştirme ortamının
-  Hepsiburada API'sine ağ erişimi yoktur).
+  doğrulanması gereken adımları listeler. (09.08.2026 itibarıyla canlı
+  PROD kimlik bilgileriyle `/orders` ve `/packages` uçları elle
+  doğrulandı; bu dosyanın güncellenmesi ayrıca gerekebilir.)
 
 ## Güvenlik Notları
 
