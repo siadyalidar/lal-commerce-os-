@@ -359,6 +359,23 @@ def init_db():
         )
         """)
 
+        # --- Ürün görselleri (şu an sadece Trendyol — "Product Filter -
+        #     Approved Product v2" servisinden gelen images[0].url). sku:
+        #     product_stock/product_costs ile aynı kavram (trendyol ->
+        #     stockCode, yoksa barcode). Ayrı tabloda tutuluyor çünkü
+        #     product_stock her stok senkronunda upsert ediliyor ve farklı,
+        #     daha sık çalışan bir endpoint kullanıyor (inventory-and-price,
+        #     images DÖNMÜYOR) — ikisini karıştırmamak için ayrı. ---
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS product_images (
+            marketplace TEXT NOT NULL,
+            sku TEXT NOT NULL,
+            image_url TEXT,
+            updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (marketplace, sku)
+        )
+        """)
+
         # --- Aylık sabit giderler (kira, personel, muhasebe, vb. — sipariş
         #     bazlı değil, ay bazlı sabit tutarlar). Her kalem ayrı satır;
         #     bir aya ait toplam SUM(amount) WHERE month=? ile hesaplanır. ---
@@ -621,6 +638,33 @@ def upsert_product_stock_quantities(rows):
                 stock_updated_at=datetime('now', 'localtime'),
                 updated_at=datetime('now', 'localtime')
         """, rows)
+
+
+def upsert_product_images(rows):
+    """rows: [{marketplace, sku, image_url}] — stock_client.py'den
+    (fetch_trendyol_product_images) gelir. image_url None ise de yazılır
+    (görseli kaldırılan/kaybolan bir ürünü eski görselle göstermemek için)."""
+    if not rows:
+        return
+    with get_connection() as conn:
+        conn.executemany("""
+            INSERT INTO product_images (marketplace, sku, image_url, updated_at)
+            VALUES (:marketplace, :sku, :image_url, datetime('now', 'localtime'))
+            ON CONFLICT(marketplace, sku) DO UPDATE SET
+                image_url=excluded.image_url,
+                updated_at=datetime('now', 'localtime')
+        """, rows)
+
+
+def list_product_images():
+    """{sku: image_url} eşlemesi döner (marketplace ayrımı yapmadan — aynı
+    SKU birden fazla pazaryerinde satılıyorsa herhangi birinin görseli
+    yeterli, kart tasarımında tek görsel gösteriliyor)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT sku, image_url FROM product_images WHERE image_url IS NOT NULL"
+        ).fetchall()
+    return {r["sku"]: r["image_url"] for r in rows}
 
 
 def upsert_product_stock_threshold(marketplace, sku, min_stock_threshold):

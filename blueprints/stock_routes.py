@@ -12,10 +12,11 @@ from flask import Blueprint, jsonify, request
 
 from database import (
     list_product_stock,
+    upsert_product_images,
     upsert_product_stock_quantities,
     upsert_product_stock_threshold,
 )
-from stock_client import fetch_hepsiburada_stock, fetch_trendyol_stock
+from stock_client import fetch_hepsiburada_stock, fetch_trendyol_product_images, fetch_trendyol_stock
 
 bp = Blueprint("stock_routes", __name__)
 
@@ -36,7 +37,28 @@ def sync_stock(marketplace):
 
     rows = [r for r in rows if r.get("sku")]
     upsert_product_stock_quantities(rows)
-    return jsonify({"ok": True, "marketplace": marketplace, "synced": len(rows)})
+
+    images_synced = 0
+    if marketplace == "trendyol":
+        # Görsel çekimi ayrı bir servis çağrısı (bkz. stock_client.py'deki
+        # fonksiyon yorumu) — burada BEST-EFFORT: başarısız olursa stok
+        # senkronunu (yukarıdaki asıl iş) başarısız saymıyoruz, sadece
+        # response'ta bildiriyoruz.
+        try:
+            image_rows = fetch_trendyol_product_images()
+            image_rows = [r for r in image_rows if r.get("sku")]
+            upsert_product_images(image_rows)
+            images_synced = len(image_rows)
+        except Exception as e:
+            return jsonify({
+                "ok": True, "marketplace": marketplace, "synced": len(rows),
+                "imagesSynced": 0, "imagesError": str(e),
+            })
+
+    return jsonify({
+        "ok": True, "marketplace": marketplace, "synced": len(rows),
+        "imagesSynced": images_synced,
+    })
 
 
 @bp.route("/api/product-stock")

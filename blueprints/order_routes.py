@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import requests
 from flask import Blueprint, jsonify, request
 
-from database import get_connection
+from database import get_connection, list_product_images
 from finance_engine import best_sellers as compute_best_sellers
 from finance_engine import compute_profit_summary
 from sync_core import DATA_START_DATE, _check_credentials, _resolve_sync_range, get_daily_returns
@@ -325,6 +325,8 @@ def api_product_performance():
     except Exception as e:
         return jsonify({"error": f"Hesaplama hatası: {e}"}), 500
 
+    image_map = list_product_images()
+
     with get_connection() as conn:
         cost_skus = {r["sku"] for r in conn.execute("SELECT sku FROM product_costs").fetchall()}
         comm_where = "merchant_sku IS NOT NULL"
@@ -345,6 +347,7 @@ def api_product_performance():
         extra = comm_map.get(it["sku"])
         it["avgCommissionRate"] = round(extra["avg_commission"], 2) if extra and extra["avg_commission"] is not None else None
         it["avgUnitPrice"] = round(extra["avg_price"], 2) if extra and extra["avg_price"] is not None else None
+        it["imageUrl"] = image_map.get(it["sku"])
 
     reverse = order != "asc"
     NEG_INF, POS_INF = -1e18, 1e18

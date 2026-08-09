@@ -96,6 +96,63 @@ def fetch_trendyol_stock():
     return results
 
 
+def fetch_trendyol_product_images():
+    """Onaylı ürünlerin sku -> ilk görsel URL'si eşlemesini döner.
+
+    "Product Filter - Approved Product v2" servisini kullanır
+    (GET /integration/product/sellers/{sellerId}/products?approved=true).
+    fetch_trendyol_stock()'un kullandığı "approved/inventory-and-price"
+    servisinden FARKLI bir servistir — o servis sadece stok/fiyat döner,
+    images alanı YOKTUR. Bu yüzden ayrı bir fonksiyon/çağrı gerekiyor.
+
+    09.08.2026'da gerçek PROD kimlik bilgileriyle elle doğrulandı: her ürün
+    'images' alanında en az bir { "url": "..." } içeriyor (birden fazla
+    varsa ilk sırada Trendyol vitrin görseli oluyor). Eşleştirme
+    stockCode ile yapılır (order_lines.merchant_sku / product_stock.sku
+    ile aynı kavram); stockCode boşsa barcode'a düşülür.
+
+    Dönen her satır: {"marketplace": "trendyol", "sku": <stockCode veya
+                       barcode>, "image_url": <str veya None>}
+    """
+    if not (TY_SUPPLIER_ID and TY_API_KEY and TY_API_SECRET):
+        raise RuntimeError("Trendyol API bilgileri eksik (.env dosyasını kontrol edin).")
+
+    url = f"{TY_BASE_URL}/integration/product/sellers/{TY_SUPPLIER_ID}/products"
+    headers = {"User-Agent": TY_USER_AGENT}
+    results = []
+    page = 0
+    size = 100
+
+    while True:
+        params = {"approved": "true", "page": page, "size": size}
+        data = get_json_with_retry(
+            url, params=params, headers=headers, auth=(TY_API_KEY, TY_API_SECRET),
+            timeout=30, max_retries=None, backoff_mode="fixed", backoff_base_seconds=3,
+        )
+
+        for item in data.get("content", []):
+            sku = item.get("stockCode") or item.get("barcode")
+            if not sku:
+                continue
+            images = item.get("images") or []
+            image_url = images[0].get("url") if images else None
+            results.append({
+                "marketplace": "trendyol",
+                "sku": sku,
+                "image_url": image_url,
+            })
+
+        total_pages = data.get("totalPages") or 1
+        page += 1
+        # Aynı 10.000 sınırı fetch_trendyol_stock()'taki gibi geçerli —
+        # bkz. oradaki yorum (nextPageToken şimdilik desteklenmiyor).
+        if page >= total_pages or page * size >= 10000:
+            break
+        time.sleep(0.2)
+
+    return results
+
+
 # ============================================================
 # Hepsiburada
 # ============================================================
