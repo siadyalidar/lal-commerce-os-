@@ -120,24 +120,24 @@
   function lalToken(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
-  function lalTokenRgba(name, alpha) {
-    const hex = lalToken(name).replace('#', '');
-    const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
-    const n = parseInt(full, 16);
-    if (Number.isNaN(n)) return `rgba(0,0,0,${alpha})`;
-    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-  }
 
-  // Görsel hiyerarşi (brief madde 6-7): Ciro nötr/ince ve kendi eksenine
-  // ayrılmış (küçük kâr serilerini ezmesin diye) — Brüt Kâr ikincil — Net Kâr
-  // pozitif ana vurgulu — Gerçek Net Kâr en güçlü vurgu (marka accent'i +
-  // kesikli çizgi + eşkenar nokta, sadece renkle ayrışmasın diye).
+  // Görsel hiyerarşi (final karar): Ciro nötr/en ince — Brüt Kâr ikincil —
+  // Net Kâr birincil pozitif vurgu — Gerçek Net Kâr en güçlü vurgu.
+  //
+  // NOT / TEŞHİS: --lal-accent bu tema sisteminde kırmızı/bordo bir tondur
+  // (#c12c3e koyu, #a92639 açık tema — bkz. tokens.css / precision-theme.css).
+  // Brief'te "Gerçek Net Kâr pozitif bir sonuçsa KIRMIZI KULLANMA" kuralı var.
+  // Bu nedenle en güçlü vurgu için --lal-accent KULLANILMADI — yerine LAL'de
+  // zaten "en yüksek kontrastlı temel değer" anlamında kullanılan
+  // --lal-text-main tercih edildi (bkz. .card .value, .lal-kpi-value aynı
+  // token'ı kullanıyor). Ayırt edicilik renk dışında da sağlanıyor: en kalın
+  // çizgi + kesikli çizgi + eşkenar dörtgen (rectRot) nokta.
   function monthlyProfitMetrics() {
     return [
-      { key: 'revenue', label: 'Ciro', axis: 'yRevenue', width: 1.5, dash: [], fillAlpha: 0, pointStyle: 'circle', color: () => lalToken('--lal-text-faint') },
-      { key: 'grossProfit', label: 'Brüt Kâr', axis: 'y', width: 1.75, dash: [], fillAlpha: 0, pointStyle: 'circle', color: () => lalToken('--lal-text-muted') },
-      { key: 'netProfit', label: 'Net Kâr', axis: 'y', width: 2.25, dash: [], fillAlpha: .14, pointStyle: 'circle', color: () => lalToken('--lal-green') },
-      { key: 'realNetProfit', label: 'Gerçek Net Kâr', axis: 'y', width: 2.5, dash: [6, 4], fillAlpha: 0, pointStyle: 'rectRot', color: () => lalToken('--lal-accent') },
+      { key: 'revenue', label: 'Ciro', width: 1.25, dash: [], pointStyle: 'circle', color: () => lalToken('--lal-text-faint') },
+      { key: 'grossProfit', label: 'Brüt Kâr', width: 1.75, dash: [], pointStyle: 'circle', color: () => lalToken('--lal-text-muted') },
+      { key: 'netProfit', label: 'Net Kâr', width: 2, dash: [], pointStyle: 'circle', color: () => lalToken('--lal-green') },
+      { key: 'realNetProfit', label: 'Gerçek Net Kâr', width: 2.5, dash: [6, 4], pointStyle: 'rectRot', color: () => lalToken('--lal-text-main') },
     ];
   }
 
@@ -193,10 +193,10 @@
     const net = m.netProfit || 0;
     const real = (m.realNetProfit ?? m.netProfit) || 0;
     const rows = [
-      { label: 'Ciro', value: rev, color: lalToken('--lal-text-faint') },
-      { label: 'Brüt Kâr', value: gross, color: lalToken('--lal-text-muted') },
-      { label: 'Net Kâr', value: net, color: lalToken('--lal-green') },
-      { label: 'Gerçek Net Kâr', value: real, color: lalToken('--lal-accent') },
+      { label: 'Ciro', value: rev, color: lalToken('--lal-text-faint'), diamond: false },
+      { label: 'Brüt Kâr', value: gross, color: lalToken('--lal-text-muted'), diamond: false },
+      { label: 'Net Kâr', value: net, color: lalToken('--lal-green'), diamond: false },
+      { label: 'Gerçek Net Kâr', value: real, color: lalToken('--lal-text-main'), diamond: true },
     ];
     const marginLine = (label, value) => rev
       ? `<div class="mpc-tooltip-margin"><span>${label}</span><span>%${((value / rev) * 100).toFixed(1)}</span></div>` : '';
@@ -205,7 +205,7 @@
       <div class="mpc-tooltip-title">${chart.data.labels[idx]}</div>
       ${rows.map(r => `
         <div class="mpc-tooltip-row">
-          <span class="mpc-tooltip-label"><span class="mpc-tooltip-dot" style="background:${r.color}"></span>${r.label}</span>
+          <span class="mpc-tooltip-label"><span class="mpc-tooltip-dot${r.diamond ? ' is-diamond' : ''}" style="background:${r.color}"></span>${r.label}</span>
           <span class="mpc-tooltip-value">${monthlyProfitTlFmt.format(r.value)}</span>
         </div>`).join('')}
       <div class="mpc-tooltip-divider"></div>
@@ -239,7 +239,7 @@
     if (!container) return;
     container.innerHTML = metrics.map((m, i) => `
       <button type="button" class="mpc-chip is-active" data-idx="${i}" aria-pressed="true">
-        <span class="mpc-chip-dot" style="background:${m.color()}"></span>${m.label}
+        <span class="mpc-chip-dot${m.pointStyle === 'rectRot' ? ' is-diamond' : ''}" style="background:${m.color()}"></span>${m.label}
       </button>`).join('');
     container.querySelectorAll('.mpc-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
@@ -309,8 +309,6 @@
 
     const metrics = monthlyProfitMetrics();
     const ctx = document.getElementById('monthlyProfitChart').getContext('2d');
-    const profitMax = Math.max(1, ...dataByKey.grossProfit, ...dataByKey.netProfit, ...dataByKey.realNetProfit);
-    const revenueMax = Math.max(1, ...dataByKey.revenue);
 
     const datasets = metrics.map((m) => {
       const color = m.color();
@@ -318,16 +316,15 @@
         type: 'line',
         label: m.label,
         data: dataByKey[m.key],
-        yAxisID: m.axis,
         borderColor: color,
-        backgroundColor: m.fillAlpha ? lalTokenRgba(m.key === 'netProfit' ? '--lal-green' : '--lal-accent', m.fillAlpha) : 'transparent',
-        fill: !!m.fillAlpha,
+        backgroundColor: color,
+        fill: false,
         borderWidth: m.width,
         borderDash: m.dash,
         tension: 0.3,
         pointStyle: m.pointStyle,
-        pointRadius: m.axis === 'yRevenue' ? 0 : 2.5,
-        pointHoverRadius: m.axis === 'yRevenue' ? 3 : 5,
+        pointRadius: 2.5,
+        pointHoverRadius: 5,
         pointBackgroundColor: color,
         pointBorderColor: lalToken('--lal-surface'),
         pointBorderWidth: 1.5,
@@ -351,24 +348,15 @@
             border: { color: lalToken('--lal-border-soft') },
             ticks: { font: { size: 11.5, family: "'Inter', sans-serif" }, color: lalToken('--lal-text-faint') },
           },
-          // Kâr serileri (Brüt/Net/Gerçek Net) kendi ekseninde — Ciro'nun
-          // büyük ölçeği artık küçük kâr değerlerini görsel olarak ezmiyor
-          // (brief madde 7).
+          // Tek eksen (brief final karar: dual-axis yok). Ciro/kâr ölçek
+          // farkı, veri normalize edilerek değil; Ciro'nun en ince/en nötr
+          // çizgi olarak düşük visual weight taşımasıyla ve metrik
+          // seçiciyle istenen seriyi tek başına görebilme imkânıyla çözülüyor.
           y: {
             beginAtZero: true,
-            suggestedMax: profitMax * 1.35,
-            position: 'left',
             grid: { color: lalToken('--lal-border-soft') },
             border: { display: false },
             ticks: { font: { size: 11, family: "'Inter', sans-serif" }, color: lalToken('--lal-text-faint'), maxTicksLimit: 6, callback: (v) => monthlyProfitTlFmt.format(v) },
-          },
-          // Ciro sadece arka plan bağlamı için — kendi (gizli) ekseninde,
-          // kâr ekseniyle karışmaz.
-          yRevenue: {
-            beginAtZero: true,
-            suggestedMax: revenueMax * 1.15,
-            position: 'right',
-            display: false,
           },
         },
       },
@@ -384,9 +372,9 @@
         const color = m.color();
         const ds = monthlyProfitChart.data.datasets[i];
         ds.borderColor = color;
+        ds.backgroundColor = color;
         ds.pointBackgroundColor = color;
         ds.pointBorderColor = lalToken('--lal-surface');
-        if (m.fillAlpha) ds.backgroundColor = lalTokenRgba(m.key === 'netProfit' ? '--lal-green' : '--lal-accent', m.fillAlpha);
       });
       monthlyProfitChart.options.scales.x.border.color = lalToken('--lal-border-soft');
       monthlyProfitChart.options.scales.x.ticks.color = lalToken('--lal-text-faint');

@@ -51,6 +51,7 @@
 .mpc-chip.is-active { background: var(--lal-surface-2); color: var(--lal-text-main); border-color: var(--lal-border); }
 .mpc-chip.is-off { opacity: .4; }
 .mpc-chip-dot { width: 7px; height: 7px; border-radius: var(--lal-radius-full); flex-shrink: 0; }
+.mpc-chip-dot.is-diamond { border-radius: 1px; transform: rotate(45deg); width: 6px; height: 6px; }
 
 /* ---------- "Devam ediyor" rozeti (mevcut ay henüz tamamlanmadıysa) ---------- */
 .mpc-badge {
@@ -116,6 +117,7 @@
 }
 .mpc-tooltip-label { display: inline-flex; align-items: center; gap: 7px; color: var(--lal-text-muted); }
 .mpc-tooltip-dot { width: 7px; height: 7px; border-radius: var(--lal-radius-full); flex-shrink: 0; }
+.mpc-tooltip-dot.is-diamond { border-radius: 1px; transform: rotate(45deg); width: 6px; height: 6px; }
 .mpc-tooltip-value {
   font-family: var(--lal-font-mono);
   font-variant-numeric: tabular-nums;
