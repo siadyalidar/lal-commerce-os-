@@ -59,3 +59,29 @@ HB dokümantasyonundan değil, yaygın konvansiyondan varsayıldı.
 
    paylaşın. Bunlarla, Trendyol tarafında (`fetch_ty_upcoming_payments`)
    yapıldığı gibi HB tarafını da tamamlayabilirim.
+
+## 🧾 Otomatik Fatura Kesme (e-Fatura / e-Arşiv) — PLANLANIYOR
+
+**Durum:** Henüz başlanmadı. Backend'e entegre edilecek.
+
+**Amaç:** LAL üzerinden Trendyol/Hepsiburada siparişleri geldiğinde devletin
+onayladığı formatta (UBL-TR) otomatik e-Fatura/e-Arşiv kesilmesi. İade
+durumlarında otomatik iade faturası (credit note) kesilmesi.
+
+**Yöntem:** GİB'e doğrudan bağlanmak yerine GİB onaylı bir özel entegratör
+(Paraşüt / Faturex / EDM / Foriba vb.) REST API'si üzerinden entegrasyon.
+
+**Akış (taslak):**
+1. Sipariş/ödeme onayı alındığında webhook tetiklenir
+2. Alıcı VKN/TCKN sorgulanır → e-Fatura mükellefi mi, e-Arşiv mi kesilecek belirlenir
+3. Sipariş kalemleri + KDV + kargo + iskonto UBL-TR formatında hazırlanır
+4. Entegratör API'sine gönderilir, XML+PDF arşivlenir
+5. İade akışında aynı mekanizma credit note için tetiklenir
+6. Kesilen fatura linki `siparisler.html` ile ilişkilendirilip veritabanına kaydedilir
+
+**Yasal not:** Yıllık ciro eşiği ve pazaryeri sipariş adedi eşikleri (Trendyol/
+Hepsiburada) e-belge zorunluluğunu tetikleyebilir — güncel GİB tebliğinden
+teyit edilmeli.
+
+**Sonraki adım:** Entegratör seçimi (fiyat/hacim karşılaştırması) → Flask
+tarafında yeni bir servis modülü (`invoice_client.py` benzeri) tasarımı.
