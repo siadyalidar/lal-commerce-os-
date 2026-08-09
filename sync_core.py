@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 import requests
@@ -154,6 +155,7 @@ HB_BASE_URL = (
     else "https://oms-external-sit.hepsiburada.com"
 )
 HB_PACKAGES_PATH = f"/packages/merchantid/{HB_MERCHANT_ID}"
+HB_ORDERS_PATH = f"/orders/merchantid/{HB_MERCHANT_ID}"
 _HB_DEBUG_LOGGED = False  # ilk senkronda ham response'u bir kez konsola basmak için
 
 # NOT (27.07.2026 güncellemesi): /packages/merchantid/{id} (üstteki HB_PACKAGES_PATH)
@@ -274,6 +276,142 @@ def fetch_all_hb_packages(start_dt, end_dt, status=None):
         if od is None or (start_ms <= od <= end_ms):
             filtered.append(it)
     return filtered
+
+
+# --- 09.08.2026: /packages'ın kaçırdığı "henüz paketlenmemiş" siparişler ---
+def fetch_unpackaged_hb_orders(start_dt, end_dt):
+    """/orders/merchantid/{id} -- HENÜZ PAKETLENMEMİŞ (status='Open',
+    packageNumber boş) siparişleri çeker.
+
+    GEREKÇE (09.08.2026, canlı yanıtla doğrulandı): /packages endpoint'i
+    SADECE gerçekten paketlenmiş (Open paket / Shipped / Delivered) kayıtları
+    döner. Satıcı panelinde "Paketlenecek" kuyruğunda duran ama henüz
+    "Paketi Hazırla" denmemiş siparişler bir PAKET objesi olarak hiç
+    oluşmadığı için /packages'ta görünmüyor -- panelde N aktif sipariş
+    görünürken senkronun 0/1 dönmesinin asıl sebebi buydu.
+
+    /orders payload'ı /packages'ın aksine satır (kalem) bazlı DÜZ liste
+    döner -- nested "items" yok. Aynı orderNumber'a ait birden fazla satır
+    olabileceği için orderNumber bazında grupluyoruz. Alan isimleri
+    /packages'tan farklı: totalPrice/unitPrice/hbDiscount/merchantDiscount
+    hep {"currency","amount"} nested dict; ürün adı 'name', SKU
+    'merchantSKU', barkod 'productBarcode'."""
+    all_items = []
+    offset = 0
+    limit = 100
+    while True:
+        params = {"offset": offset, "limit": limit}
+        data = hepsiburada_get(HB_ORDERS_PATH, params)
+        items = (data or {}).get("items") or []
+        total_count = (data or {}).get("totalCount", 0)
+        all_items.extend(items)
+        offset += limit
+        if offset >= total_count or not items:
+            break
+
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    grouped = {}
+    for it in all_items:
+        if it.get("packageNumber"):
+            continue  # zaten paketlenmiş -> /packages'tan gelecek, tekrar sayma
+        if (it.get("status") or "").lower() != "open":
+            continue
+        od = _hb_iso_to_epoch_ms(it.get("orderDate"))
+        if od is not None and not (start_ms <= od <= end_ms):
+            continue
+        order_number = it.get("orderNumber")
+        if not order_number:
+            continue
+        grouped.setdefault(order_number, []).append(it)
+
+    order_rows = []
+    line_rows = []
+    for order_number, lines in grouped.items():
+        try:
+            placeholder_id = -abs(int(order_number))
+        except (TypeError, ValueError):
+            placeholder_id = -abs(hash(order_number)) % (10 ** 9)
+
+        gross = sum(_hb_money(ln.get("totalPrice")) or 0 for ln in lines)
+        discount = sum(
+            (_hb_money((ln.get("hbDiscount") or {}).get("totalPrice")) or 0)
+            + (_hb_money((ln.get("merchantDiscount") or {}).get("totalPrice")) or 0)
+            for ln in lines
+        )
+        net = gross - discount
+        first = lines[0]
+
+        order_rows.append({
+            "shipment_package_id": placeholder_id,
+            "marketplace": "hepsiburada",
+            "order_number": order_number,
+            "order_date": _hb_iso_to_epoch_ms(first.get("orderDate")),
+            "status": "AwaitingPackage",
+            "customer": first.get("customerName"),
+            "cargo_provider": first.get("cargoCompany"),
+            "gross_amount": gross,
+            "discount_amount": discount,
+            "net_amount": net,
+        })
+
+        for ln in lines:
+            line_rows.append({
+                "shipment_package_id": placeholder_id,
+                "marketplace": "hepsiburada",
+                "barcode": ln.get("productBarcode") or ln.get("sku"),
+                "merchant_sku": ln.get("merchantSKU") or ln.get("sku"),
+                "product_name": ln.get("name"),
+                "quantity": ln.get("quantity"),
+                "line_unit_price": _hb_money(ln.get("unitPrice")),
+                "commission_rate": ln.get("commissionRate"),
+            })
+
+    return order_rows, line_rows
+
+# --- PERFORMANS DÜZELTMESİ (09.08.2026): shipped/delivered N+1 sorgu sorunu ---
+# ESKİ DAVRANIŞ: her benzersiz OrderNumber için /orders/.../ordernumber/{n}
+# isteği SIRAYLA atılıyordu. Trendyol tarafı tek bulk endpoint'ten (satırlarıyla
+# birlikte) geldiği için manuel senkron saniyeler sürerken, HB tarafında
+# örneğin 300 "kargoda/teslim edildi" siparişi varsa 300 ardışık HTTP isteği
+# atılıyordu — kullanıcının "Trendyol anında, HB'de bekliyorum" şikayetinin
+# asıl kaynağı buydu. İki düzeltme:
+#   1) _HB_SKIP_REFRESH_AFTER_DAYS'ten eski VE DB'de zaten tam satır verisiyle
+#      duran siparişler için detay isteği hiç atılmıyor (durumu artık
+#      değişmesi beklenmediği için — bkz. _known_hb_order_numbers).
+#   2) Kalan (yeni/yakın tarihli) siparişlerin detay istekleri artık
+#      ThreadPoolExecutor ile PARALEL atılıyor (bkz. _HB_DETAIL_FETCH_WORKERS).
+# NOT: Bu, çok yakın zamanda durumu değişen (örn. "Shipped" iken az önce
+# "Cancelled" olan) 3 günden eski bir siparişi bu turda kaçırabilir — bilinçli
+# bir ödünleşim. Daha agresif tazeleme isterseniz _HB_SKIP_REFRESH_AFTER_DAYS'i
+# düşürün (0 = eski davranışa dön, hiç atlama yapma).
+_HB_DETAIL_FETCH_WORKERS = 8
+_HB_SKIP_REFRESH_AFTER_DAYS = 3
+
+
+def _known_hb_order_numbers(order_numbers, min_age_days=_HB_SKIP_REFRESH_AFTER_DAYS):
+    """Verilen order_number'lardan hangilerinin DB'de ZATEN tam satır (item)
+    verisiyle durduğunu ve yeterince eski olduğunu (min_age_days) döner —
+    bunlar için HB detay API'si tekrar çağrılmaz."""
+    if not order_numbers:
+        return set()
+    cutoff_ms = int((datetime.now() - timedelta(days=min_age_days)).timestamp() * 1000)
+    with get_connection() as conn:
+        placeholders = ",".join("?" for _ in order_numbers)
+        rows = conn.execute(f"""
+            SELECT DISTINCT o.order_number
+            FROM orders o
+            JOIN order_lines ol ON ol.marketplace = o.marketplace
+                                AND ol.shipment_package_id = o.shipment_package_id
+            WHERE o.marketplace = 'hepsiburada'
+              AND o.order_number IN ({placeholders})
+              AND o.order_date IS NOT NULL AND o.order_date < ?
+              AND ol.quantity IS NOT NULL
+        """, [*order_numbers, cutoff_ms]).fetchall()
+    return {r["order_number"] for r in rows}
+
+
 # ---- kaynak: app.py satır 355-450 (_fetch_hb_packages_by_lifecycle_endpoint) ----
 def _fetch_hb_packages_by_lifecycle_endpoint(path, start_dt, end_dt, label,
                                               default_status, order_detail_cache,
@@ -294,7 +432,13 @@ def _fetch_hb_packages_by_lifecycle_endpoint(path, start_dt, end_dt, label,
     sadece debug log'a düşüp tamamen sessizce yutuluyordu — sync sonucu
     kullanıcıya "tamamlandı" olarak dönerken kaç siparişin ürün/fiyat detayı
     eksik kaldığı hiçbir yerde görünmüyordu. Artık sync_hb_packages_to_db bu
-    sayıyı ilerleme mesajına ekliyor."""
+    sayıyı ilerleme mesajına ekliyor.
+
+    PERFORMANS: bkz. yukarıdaki "PERFORMANS DÜZELTMESİ" notu — zaten bilinen/
+    eski siparişler atlanıyor, kalanlar paralel çekiliyor. failed_order_numbers
+    set'i sadece ana thread'de (fut.result() işlenirken) mutasyona uğruyor,
+    worker thread'ler sadece (order_number, detail) döndürüyor — bu yüzden
+    ekstra bir kilide gerek yok."""
     hours = max(1, int((datetime.now() - start_dt).total_seconds() // 3600) + 1)
     logger.debug(f"[HB {label} DEBUG] istenen timespan (saat): {hours} (start_dt={start_dt})")
 
@@ -320,24 +464,51 @@ def _fetch_hb_packages_by_lifecycle_endpoint(path, start_dt, end_dt, label,
             break
         offset += limit
 
-    packages = []
+    # Geçerli (order_number, package_number) çiftlerini çıkar
+    valid_records = []
     for rec in records:
         order_number = (rec.get("OrderNumber") or rec.get("orderNumber")
                          or (rec.get("OrderNumbers") or rec.get("orderNumbers") or [None])[0])
         package_number = rec.get("PackageNumber") or rec.get("packageNumber")
         if not order_number or not package_number:
             continue
+        valid_records.append((order_number, package_number))
 
-        if order_number not in order_detail_cache:
+    all_order_numbers = {on for on, _ in valid_records}
+    already_known = _known_hb_order_numbers(all_order_numbers)
+    to_fetch = [on for on in all_order_numbers
+                if on not in order_detail_cache and on not in already_known]
+
+    if to_fetch:
+        logger.debug(
+            f"[HB {label} DEBUG] {len(to_fetch)} sipariş detayı paralel çekiliyor "
+            f"({len(already_known)} zaten bilinen/eski sipariş atlandı, "
+            f"{_HB_DETAIL_FETCH_WORKERS} eşzamanlı worker)"
+        )
+
+        def _fetch_one(order_number):
             try:
-                detail = hepsiburada_get(HB_ORDER_DETAIL_PATH_TMPL.format(order_number=order_number))
+                return order_number, hepsiburada_get(HB_ORDER_DETAIL_PATH_TMPL.format(order_number=order_number)), None
             except requests.RequestException as e:
                 logger.debug(f"[HB {label} DEBUG] sipariş detayı alınamadı (orderNumber={order_number}): {e}")
-                if failed_order_numbers is not None:
-                    failed_order_numbers.add(order_number)
-                detail = None
-            order_detail_cache[order_number] = detail
-        detail = order_detail_cache[order_number]
+                return order_number, None, order_number
+
+        with ThreadPoolExecutor(max_workers=_HB_DETAIL_FETCH_WORKERS) as executor:
+            futures = [executor.submit(_fetch_one, on) for on in to_fetch]
+            for fut in as_completed(futures):
+                order_number, detail, failed_order_number = fut.result()
+                order_detail_cache[order_number] = detail
+                if failed_order_number is not None and failed_order_numbers is not None:
+                    failed_order_numbers.add(failed_order_number)
+
+    packages = []
+    for order_number, package_number in valid_records:
+        if order_number in already_known:
+            # DB'de zaten tam ve yeterince eski/durağan veriyle duruyor —
+            # bu turda dokunulmuyor (mevcut satır zaten korunuyor).
+            continue
+
+        detail = order_detail_cache.get(order_number)
         if not detail:
             continue
 
@@ -546,6 +717,31 @@ def sync_hb_packages_to_db(start_dt, end_dt, progress_cb=None):
             "discount_amount": discount,
             "net_amount": net,
         })
+
+    # --- 09.08.2026: henüz paketlenmemiş ("Paketlenecek") siparişleri de ekle ---
+    if progress_cb:
+        progress_cb("Hepsiburada paketlenmemiş siparişleri çekiliyor…")
+    unpackaged_order_rows, unpackaged_line_rows = fetch_unpackaged_hb_orders(start_dt, end_dt)
+
+    packaged_order_numbers = {r.get("order_number") for r in order_rows if r.get("order_number")}
+    unpackaged_id_by_order_number = {r["order_number"]: r["shipment_package_id"] for r in unpackaged_order_rows}
+    appended_order_numbers = set()
+    for r in unpackaged_order_rows:
+        if r["order_number"] in packaged_order_numbers:
+            continue  # bu turda zaten paketlenmiş görünmüş -> tekrar ekleme
+        order_rows.append(r)
+        appended_order_numbers.add(r["order_number"])
+
+    kept_placeholder_ids = {unpackaged_id_by_order_number[on] for on in appended_order_numbers}
+    for r in unpackaged_line_rows:
+        if r["shipment_package_id"] in kept_placeholder_ids:
+            line_rows.append(r)
+
+    # Bir sipariş DAHA ÖNCE placeholder (negatif id) olarak yazılmışsa ve artık
+    # gerçek pakete sahipse (bu turda /packages'ta göründü), eski placeholder
+    # satırını sil -- aksi halde ÇİFT SAYILIR (hem placeholder hem gerçek paket).
+    from database import delete_hb_placeholder_orders
+    delete_hb_placeholder_orders(packaged_order_numbers)
 
     upsert_orders(order_rows)
     upsert_order_lines(line_rows)

@@ -480,6 +480,40 @@ def upsert_order_lines(rows):
         """, rows)
 
 
+def delete_hb_placeholder_orders(order_numbers):
+    """/orders'tan (henüz paketlenmemiş) yazılan negatif shipment_package_id'li
+    placeholder satırları, sipariş gerçekten paketlenip /packages'ta (pozitif,
+    gerçek packageNumber ile) göründüğünde siler -- aksi halde aynı sipariş
+    hem placeholder hem gerçek paket olarak DB'de durur ve gelir/kâr
+    raporlarında ÇİFT SAYILIR.
+    order_numbers: hepsiburada order_number değerlerinden oluşan liste/set."""
+    order_numbers = [n for n in order_numbers if n]
+    if not order_numbers:
+        return
+    with get_connection() as conn:
+        placeholders = ",".join("?" for _ in order_numbers)
+        stale_ids = [
+            row[0] for row in conn.execute(
+                f"""SELECT shipment_package_id FROM orders
+                    WHERE marketplace = 'hepsiburada'
+                      AND shipment_package_id < 0
+                      AND order_number IN ({placeholders})""",
+                order_numbers,
+            ).fetchall()
+        ]
+        if not stale_ids:
+            return
+        id_placeholders = ",".join("?" for _ in stale_ids)
+        conn.execute(
+            f"DELETE FROM order_lines WHERE marketplace='hepsiburada' AND shipment_package_id IN ({id_placeholders})",
+            stale_ids,
+        )
+        conn.execute(
+            f"DELETE FROM orders WHERE marketplace='hepsiburada' AND shipment_package_id IN ({id_placeholders})",
+            stale_ids,
+        )
+
+
 def upsert_settlements(rows):
     """rows: dict listesi. 'marketplace' alanı opsiyoneldir; verilmezse
     geriye dönük uyumluluk için 'trendyol' varsayılır (mevcut trendyol_finance.py
