@@ -1412,9 +1412,6 @@ def sync_orders_to_db(start_dt, end_dt, progress_cb=None):
                 "quantity": line.get("quantity"),
                 "line_unit_price": line.get("lineUnitPrice"),
                 "commission_rate": line.get("commission"),
-                "sales_campaign_id": line.get("salesCampaignId"),
-                "seller_discount": line.get("discount"),
-                "marketplace_discount": line.get("tyDiscount"),
             })
 
     upsert_orders(order_rows)

@@ -223,23 +223,10 @@ def _migrate_composite_keys(conn):
 # değişiklik eklerken: (1) idempotent bir fonksiyon yaz, (2) buraya
 # (benzersiz_isim, fonksiyon) olarak ekle. _run_migrations sırayla çalıştırır
 # ve schema_migrations tablosuna kaydeder.
-def _migrate_growth_columns(conn):
-    """order_lines'a kampanya/indirim kolonlarını ekler (Gelir Kaçakları
-    ekranı için). Nullable -- gecmis satirlarda NULL kalir, yeni senkronda
-    dolar. apply_growth_patch.py tarafindan otomatik eklendi."""
-    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(order_lines)")}
-    if "sales_campaign_id" not in existing_cols:
-        conn.execute("ALTER TABLE order_lines ADD COLUMN sales_campaign_id TEXT")
-    if "seller_discount" not in existing_cols:
-        conn.execute("ALTER TABLE order_lines ADD COLUMN seller_discount REAL")
-    if "marketplace_discount" not in existing_cols:
-        conn.execute("ALTER TABLE order_lines ADD COLUMN marketplace_discount REAL")
-
-
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
-    ("2026_08_09_growth_columns", _migrate_growth_columns),
 ]
+
 
 def init_db():
     with get_connection() as conn:
@@ -495,27 +482,18 @@ def upsert_order_lines(rows):
     """rows: dict listesi. Her dict 'marketplace' alanı içermeli."""
     if not rows:
         return
-    for r in rows:
-        r.setdefault("sales_campaign_id", None)
-        r.setdefault("seller_discount", None)
-        r.setdefault("marketplace_discount", None)
     with get_connection() as conn:
         conn.executemany("""
             INSERT INTO order_lines (shipment_package_id, marketplace, barcode, merchant_sku, product_name,
-                                      quantity, line_unit_price, commission_rate,
-                                      sales_campaign_id, seller_discount, marketplace_discount)
+                                      quantity, line_unit_price, commission_rate)
             VALUES (:shipment_package_id, :marketplace, :barcode, :merchant_sku, :product_name,
-                    :quantity, :line_unit_price, :commission_rate,
-                    :sales_campaign_id, :seller_discount, :marketplace_discount)
+                    :quantity, :line_unit_price, :commission_rate)
             ON CONFLICT(marketplace, shipment_package_id, barcode) DO UPDATE SET
                 merchant_sku=excluded.merchant_sku,
                 product_name=excluded.product_name,
                 quantity=excluded.quantity,
                 line_unit_price=excluded.line_unit_price,
-                commission_rate=excluded.commission_rate,
-                sales_campaign_id=excluded.sales_campaign_id,
-                seller_discount=excluded.seller_discount,
-                marketplace_discount=excluded.marketplace_discount
+                commission_rate=excluded.commission_rate
         """, rows)
 
 

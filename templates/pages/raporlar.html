@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Raporlar — LAL{% endblock %}
+{% block page_title %}Raporlar{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reports.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="lal-page-intro">
+  <p>İş zekâsı</p>
+  <h1>Satışı, kârı ve stoku <strong>tek ekranda gör.</strong></h1>
+  <span>Üstteki pazaryeri ve tarih filtresi tüm raporları birlikte günceller.</span>
+</section>
+
+<div id="reports-loading" class="loading">Rapor hazırlanıyor…</div>
+<div id="reports-content" class="is-hidden">
+  <section class="reports-kpis">
+    <div class="report-kpi"><span>Ciro</span><strong id="report-revenue">–</strong></div>
+    <div class="report-kpi"><span>Net Kâr</span><strong id="report-profit">–</strong></div>
+    <div class="report-kpi"><span>Net Marj</span><strong id="report-margin">–</strong></div>
+    <div class="report-kpi"><span>Satılan Adet</span><strong id="report-quantity">–</strong></div>
+  </section>
+
+  <div class="reports-grid">
+    <section class="panel reports-chart-panel">
+      <div class="panel-header-row"><div><h2>Günlük satış ve kâr</h2><p class="panel-note">Sipariş tarihine göre hesaplanır.</p></div></div>
+      <div class="reports-chart-wrap"><canvas id="reportsTrendChart"></canvas></div>
+    </section>
+    <section class="panel">
+      <h2>Pazaryeri karşılaştırması</h2>
+      <p class="panel-note">Seçili aralıktaki gerçek/tahmini net kâr katkısı.</p>
+      <div id="report-marketplaces" class="reports-marketplaces"></div>
+    </section>
+  </div>
+
+  <div class="reports-grid">
+    <section class="panel">
+      <h2>En kârlı ürünler</h2>
+      <div class="table-scroll"><table><thead><tr><th>Ürün</th><th>Adet</th><th>Ciro</th><th>Kâr</th><th>Marj</th></tr></thead><tbody id="report-products"></tbody></table></div>
+    </section>
+    <section class="panel">
+      <div class="panel-header-row"><div><h2>Stok riski</h2><p class="panel-note" id="report-stock-note">Minimum eşiğin altındaki ürünler.</p></div></div>
+      <div class="table-scroll"><table><thead><tr><th>Pazaryeri</th><th>SKU</th><th>Stok</th><th>Min.</th></tr></thead><tbody id="report-stock"></tbody></table></div>
+    </section>
+  </div>
+
+  <section class="lal-callout lal-callout-warning reports-quality" id="report-quality"></section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/raporlar.js') }}"></script>
+{% endblock %}

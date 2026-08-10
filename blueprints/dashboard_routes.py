@@ -53,6 +53,10 @@ def urunler_page():
 def stok_page():
     return render_template("pages/stok.html", active_page="stok")
 
+@bp.route("/gelir-kacaklari")
+def growth_center_page():
+    return render_template("pages/gelir-kacaklari.html", active_page="gelir-kacaklari")
+
 @bp.route("/ayarlar")
 def ayarlar_page():
     return render_template("pages/ayarlar.html", active_page="ayarlar")

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Gelir Kaçakları — LAL{% endblock %}
+{% block content %}
+<section class="lal-page-intro">
+  <div><p class="eyebrow">Büyüme merkezi</p><h1>Gelir Kaçakları</h1><p>Satışı büyütmek için bekleyen soruları, iade nedenlerini ve kampanya katkısını tek yerde izle.</p></div>
+  <div><label class="lal-field">Dönem <select id="growth-days"><option value="30">Son 30 gün</option><option value="90">Son 90 gün</option><option value="180">Son 6 ay</option></select></label></div>
+</section>
+<div id="growth-error" class="alert alert-danger" style="display:none"></div>
+<section class="lal-grid-3">
+  <div class="lal-kpi-card"><span class="lal-kpi-label">Bekleyen soru</span><strong id="questions-kpi">–</strong><small>Müşteri yanıt bekliyor</small></div>
+  <div class="lal-kpi-card"><span class="lal-kpi-label">İade sinyali</span><strong id="returns-kpi">–</strong><small>İade edilen ürün adedi</small></div>
+  <div class="lal-kpi-card"><span class="lal-kpi-label">Kampanya katkısı</span><strong id="campaign-kpi">–</strong><small>Ürün maliyeti tanımlı satırlar</small></div>
+</section>
+<section class="lal-panel"><div class="lal-panel-header"><div><h2 class="lal-panel-title">Müşteri Soruları</h2><p class="muted">Önce soruları senkronla; yanıt gönderimi her zaman açık onay ister.</p></div><button id="questions-sync" class="lal-btn lal-btn-primary">Soruları getir</button></div><div id="questions-list" class="growth-list">Henüz veri alınmadı.</div></section>
+<section class="lal-panel"><div class="lal-panel-header"><h2 class="lal-panel-title">İade Nedenlerinden Aksiyonlar</h2><button id="returns-load" class="lal-btn lal-btn-ghost">İadeleri analiz et</button></div><div id="returns-list" class="growth-list">Henüz veri alınmadı.</div></section>
+<section class="lal-panel"><div class="lal-panel-header"><h2 class="lal-panel-title">Kampanya Kârlılığı</h2><button id="campaign-load" class="lal-btn lal-btn-ghost">Kampanyaları hesapla</button></div><div class="table-scroll"><table><thead><tr><th>Kampanya</th><th>SKU</th><th>Adet</th><th>Ciro</th><th>Satıcı indirimi</th><th>Tahmini katkı</th></tr></thead><tbody id="campaign-table"><tr><td colspan="6">Henüz veri alınmadı.</td></tr></tbody></table></div></section>
+{% endblock %}
+{% block page_scripts %}<script src="{{ url_for('static', filename='js/gelir-kacaklari.js') }}"></script>{% endblock %}

@@ -46,6 +46,12 @@ def test_protected_route_with_correct_credentials_passes(client):
     assert resp.status_code == 200
 
 
+def test_growth_center_page_is_available(client):
+    resp = client.get("/gelir-kacaklari", headers=auth_headers())
+    assert resp.status_code == 200
+    assert "Gelir Kaçakları" in resp.get_data(as_text=True)
+
+
 # ============================================================
 # Kritik API uç noktaları — 200 + beklenen JSON şekli
 # ============================================================
