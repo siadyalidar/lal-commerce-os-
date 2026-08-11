@@ -16,6 +16,7 @@
     <button type="button" class="lal-tab is-active" data-tab="fin-genel-bakis">Genel Bakış</button>
     <button type="button" class="lal-tab" data-tab="fin-sabit-giderler">Sabit Giderler</button>
     <button type="button" class="lal-tab" data-tab="fin-hakedis-takvimi">Hakediş Takvimi</button>
+    <button type="button" class="lal-tab" data-tab="fin-toptanci-borcu">Toptancı Borcu</button>
   </div>
 
   <!-- === GENEL BAKIŞ === -->
@@ -123,11 +124,83 @@
       </div>
     </div>
   </div>
+
+  <!-- === TOPTANCI BORCU === -->
+  <div class="lal-tab-panel" id="fin-toptanci-borcu">
+    <div class="panel">
+      <h2>Toptancı Borcu</h2>
+      <p class="panel-note">Bir SKU'yu bir tedarikçiye bağladığında, o SKU her satıldığında (KDV dahil alış fiyatı × adet) kadar borç otomatik birikir. Ödeme girdikçe bakiye düşer — tam defter.</p>
+
+      <div class="lal-field-row lal-mb-4">
+        <div class="lal-field lal-field-grow">
+          <label for="tb-supplier-name">Yeni Tedarikçi</label>
+          <input type="text" id="tb-supplier-name" placeholder="Tedarikçi adı">
+        </div>
+        <button class="lal-btn lal-btn-primary" id="tb-supplier-add">Ekle</button>
+      </div>
+      <div id="tb-form-msg" class="lal-form-msg is-hidden"></div>
+
+      <div id="tb-table-wrap" class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Tedarikçi</th>
+              <th>Bakiye</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tb-tbody"></tbody>
+        </table>
+      </div>
+
+      <p class="panel-note lal-mt-3"><strong>Toplam Toptancı Borcu: <span id="tb-toplam-borc">—</span></strong></p>
+    </div>
+
+    <div class="panel lal-mt-4">
+      <h2>SKU → Tedarikçi Ataması</h2>
+      <p class="panel-note">Bir ürünün hangi tedarikçiden geldiğini işaretle. Yeni bir SKU'yu atadıktan sonra, satılmış geçmiş siparişleri de saymak için "Geçmişi Tara"yı kullan.</p>
+      <div class="lal-field-row lal-mb-3">
+        <div class="lal-field lal-field-grow">
+          <label for="tb-sku-input">SKU</label>
+          <input type="text" id="tb-sku-input" list="tb-sku-list" placeholder="SKU yaz veya seç">
+          <datalist id="tb-sku-list"></datalist>
+        </div>
+        <div class="lal-field">
+          <label for="tb-sku-supplier-select">Tedarikçi</label>
+          <select id="tb-sku-supplier-select"></select>
+        </div>
+        <button class="lal-btn lal-btn-primary" id="tb-sku-assign">Ata</button>
+        <button class="lal-btn" id="tb-backfill">Geçmişi Tara</button>
+      </div>
+      <div id="tb-sku-msg" class="lal-form-msg is-hidden"></div>
+    </div>
+
+    <div class="panel lal-mt-4 is-hidden" id="tb-ledger-panel">
+      <div class="panel-header-row">
+        <h2 id="tb-ledger-title">Hareketler</h2>
+        <button class="lal-btn" id="tb-ledger-close">Kapat</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Tarih</th>
+              <th>Tip</th>
+              <th>Tutar</th>
+              <th>Açıklama</th>
+            </tr>
+          </thead>
+          <tbody id="tb-ledger-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 {% endblock %}
 
 {% block page_scripts %}
 <script src="{{ url_for('static', filename='js/finans-giderler.js') }}"></script>
 <script src="{{ url_for('static', filename='js/payout-calendar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/toptanci-borcu.js') }}"></script>
 <script>
   // Finans sayfası sekme geçişi — yalnızca bu sayfaya özel, küçük ve bağımsız bir UI script'i.
   (function () {
