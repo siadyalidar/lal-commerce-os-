@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 from database import (
     add_supplier_payment,
+    backfill_supplier_debt,
     create_supplier,
     delete_supplier,
     get_total_supplier_debt,
@@ -61,3 +62,12 @@ def pay_supplier(tedarikci_id):
 @bp.route("/api/tedarikciler/<int:tedarikci_id>/hareketler", methods=["GET"])
 def supplier_ledger(tedarikci_id):
     return jsonify({"items": list_supplier_ledger(tedarikci_id)})
+
+
+@bp.route("/api/tedarikciler/backfill", methods=["POST"])
+def backfill():
+    """Bir SKU'ya yeni tedarikçi atadıktan sonra, o SKU'nun atamadan ÖNCE
+    satılmış geçmiş order_lines satırları için de borç yazılsın istersen
+    bunu çağır. Tüm order_lines'ı tarar, idempotenttir."""
+    taranan = backfill_supplier_debt()
+    return jsonify({"ok": True, "taranan_satir": taranan, "items": list_suppliers()})

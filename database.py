@@ -791,6 +791,24 @@ def get_total_supplier_debt():
     return round(sum(s["bakiye"] for s in list_suppliers()), 2)
 
 
+def backfill_supplier_debt():
+    """Var olan TÜM order_lines satırlarını tarar ve _sync_supplier_debt ile
+    aynı mantığı uygular. Bir SKU'ya YENİ tedarikçi atadığında, o SKU'nun
+    atamadan ÖNCE satılmış geçmiş satırları için borç otomatik yazılmaz
+    (çünkü sadece upsert_order_lines çağrıldığında -- yani yeni bir senkron
+    sırasında -- tetiklenir). Bu fonksiyon geçmişe dönük telafi için: tüm
+    order_lines'ı yeniden tarar, sadece o an tedarikçisi atanmış SKU'lar için
+    eksik olan 'satis' hareketlerini ekler. İdempotent (aynı UNIQUE kısıt),
+    istediğin kadar tekrar çağrılabilir."""
+    with get_connection() as conn:
+        rows = [dict(r) for r in conn.execute("""
+            SELECT marketplace, shipment_package_id, barcode, merchant_sku, quantity
+            FROM order_lines
+        """).fetchall()]
+        _sync_supplier_debt(conn, rows)
+    return len(rows)
+
+
 # --- Canlı stok / düşük stok uyarısı ---
 
 def upsert_product_stock_quantities(rows):
