@@ -354,6 +354,33 @@ def init_db():
         )
         """)
 
+        # --- Toptancı borcu: tedarikçiler + borç defteri (satış borcu birikir,
+        #     ödeme girişiyle düşer). product_costs.tedarikci_id ile bir SKU'nun
+        #     hangi tedarikçiden geldiği işaretlenir; o SKU satıldıkça
+        #     (KDV dahil alış fiyatı x adet) kadar 'satis' hareketi otomatik
+        #     eklenir (bkz. _sync_supplier_debt, upsert_order_lines içinden
+        #     çağrılır). 11.08.2026 eklendi. ---
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS tedarikciler (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ad TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+        )
+        """)
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS tedarikci_borc_hareketleri (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tedarikci_id INTEGER NOT NULL REFERENCES tedarikciler(id),
+            tip TEXT NOT NULL CHECK(tip IN ('satis','odeme')),
+            tutar REAL NOT NULL,
+            order_line_key TEXT,
+            aciklama TEXT,
+            tarih TEXT DEFAULT (datetime('now', 'localtime')),
+            UNIQUE(order_line_key, tip)
+        )
+        """)
+
         # --- Canlı stok + kullanıcı tanımlı min eşik (Ürün Ayarları /
         #     Düşük Stok Uyarısı). quantity: Trendyol/HB API senkronundan
         #     gelir (bkz. stock_client.py); min_stock_threshold: kullanıcı
@@ -453,6 +480,8 @@ def init_db():
         _ensure_column(conn, "settlements", "marketplace", "TEXT NOT NULL DEFAULT 'trendyol'")
         _ensure_column(conn, "other_financials", "marketplace", "TEXT NOT NULL DEFAULT 'trendyol'")
         _ensure_column(conn, "cargo_costs", "marketplace", "TEXT NOT NULL DEFAULT 'trendyol'")
+        # 11.08.2026: toptancı borcu — bir SKU'nun hangi tedarikçiden geldiğini işaretler.
+        _ensure_column(conn, "product_costs", "tedarikci_id", "INTEGER REFERENCES tedarikciler(id)")
         conn.commit()
 
         _run_migrations(conn)
@@ -491,6 +520,65 @@ def upsert_orders(rows):
         """, rows)
 
 
+def _sync_supplier_debt(conn, rows):
+    """order_lines upsert edilirken çağrılır: tedarikçisi atanmış SKU'lar için
+    (product_costs.cost_incl_vat x adet) kadar 'satis' borç hareketi ekler.
+
+    SKU eşleşmesi: COALESCE(merchant_sku, barcode) = product_costs.sku —
+    product_costs/product_stock'ta zaten kullanılan aynı konvansiyon (trendyol
+    -> stockCode/barcode, hepsiburada -> merchantSku).
+
+    İdempotent: (order_line_key, tip='satis') UNIQUE olduğu için aynı satır
+    (marketplace, shipment_package_id, barcode) tekrar senkronize edilirse
+    borç ikinci kez eklenmez (INSERT OR IGNORE). NOT: bir satırın miktarı
+    sonradan değişirse (ör. Trendyol/HB tarafında düzeltme) borç kaydı
+    GÜNCELLENMEZ, çünkü ilk senkronda zaten yazılmış olur — bu istisnai bir
+    durum, fark edilirse elle bir 'odeme' veya düzeltme hareketiyle telafi
+    edilmesi gerekir."""
+    tedarikcili_skus = {r[0] for r in conn.execute(
+        "SELECT sku FROM product_costs WHERE tedarikci_id IS NOT NULL"
+    ).fetchall()}
+    if not tedarikcili_skus:
+        return
+
+    placeholders = ",".join("?" for _ in tedarikcili_skus)
+    cost_map = {
+        row["sku"]: (row["cost_incl_vat"], row["tedarikci_id"])
+        for row in conn.execute(
+            f"SELECT sku, cost_incl_vat, tedarikci_id FROM product_costs WHERE sku IN ({placeholders})",
+            list(tedarikcili_skus),
+        ).fetchall()
+        if row["cost_incl_vat"] is not None
+    }
+    if not cost_map:
+        return
+
+    debt_rows = []
+    for r in rows:
+        sku = r.get("merchant_sku") or r.get("barcode")
+        if sku not in cost_map:
+            continue
+        adet = r.get("quantity") or 0
+        if not adet:
+            continue
+        cost_incl_vat, tedarikci_id = cost_map[sku]
+        line_key = f"{r.get('marketplace')}:{r.get('shipment_package_id')}:{r.get('barcode')}"
+        debt_rows.append({
+            "tedarikci_id": tedarikci_id,
+            "tutar": round(cost_incl_vat * adet, 2),
+            "order_line_key": line_key,
+            "aciklama": f"Satis - {sku} x{adet}",
+        })
+    if not debt_rows:
+        return
+
+    conn.executemany("""
+        INSERT OR IGNORE INTO tedarikci_borc_hareketleri
+            (tedarikci_id, tip, tutar, order_line_key, aciklama)
+        VALUES (:tedarikci_id, 'satis', :tutar, :order_line_key, :aciklama)
+    """, debt_rows)
+
+
 def upsert_order_lines(rows):
     """rows: dict listesi. Her dict 'marketplace' alanı içermeli."""
     if not rows:
@@ -517,6 +605,7 @@ def upsert_order_lines(rows):
                 seller_discount=excluded.seller_discount,
                 marketplace_discount=excluded.marketplace_discount
         """, rows)
+        _sync_supplier_debt(conn, rows)
 
 
 def delete_hb_placeholder_orders(order_numbers):
@@ -640,6 +729,66 @@ def upsert_product_costs(rows):
                 cost_excl_vat=excluded.cost_excl_vat,
                 updated_at=datetime('now', 'localtime')
         """, rows)
+
+
+# --- Toptancı borcu ---
+
+def list_suppliers():
+    """Her tedarikçi için ad + güncel bakiye (toplam satış borcu - toplam ödeme)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT t.id, t.ad,
+                   COALESCE(SUM(CASE WHEN h.tip='satis' THEN h.tutar ELSE 0 END),0) AS toplam_satis,
+                   COALESCE(SUM(CASE WHEN h.tip='odeme' THEN h.tutar ELSE 0 END),0) AS toplam_odeme
+            FROM tedarikciler t
+            LEFT JOIN tedarikci_borc_hareketleri h ON h.tedarikci_id = t.id
+            GROUP BY t.id, t.ad
+            ORDER BY t.ad
+        """).fetchall()
+    return [
+        {"id": r["id"], "ad": r["ad"], "bakiye": round(r["toplam_satis"] - r["toplam_odeme"], 2)}
+        for r in rows
+    ]
+
+
+def create_supplier(ad):
+    with get_connection() as conn:
+        cur = conn.execute("INSERT INTO tedarikciler (ad) VALUES (?)", (ad,))
+        return cur.lastrowid
+
+
+def delete_supplier(tedarikci_id):
+    with get_connection() as conn:
+        conn.execute("UPDATE product_costs SET tedarikci_id = NULL WHERE tedarikci_id = ?", (tedarikci_id,))
+        conn.execute("DELETE FROM tedarikci_borc_hareketleri WHERE tedarikci_id = ?", (tedarikci_id,))
+        conn.execute("DELETE FROM tedarikciler WHERE id = ?", (tedarikci_id,))
+
+
+def assign_supplier_to_sku(sku, tedarikci_id):
+    """tedarikci_id=None verilirse SKU'nun tedarikçi ataması kaldırılır."""
+    with get_connection() as conn:
+        conn.execute("UPDATE product_costs SET tedarikci_id = ? WHERE sku = ?", (tedarikci_id, sku))
+
+
+def add_supplier_payment(tedarikci_id, tutar, aciklama=""):
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO tedarikci_borc_hareketleri (tedarikci_id, tip, tutar, aciklama)
+            VALUES (?, 'odeme', ?, ?)
+        """, (tedarikci_id, tutar, aciklama))
+
+
+def list_supplier_ledger(tedarikci_id, limit=200):
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT id, tip, tutar, aciklama, tarih FROM tedarikci_borc_hareketleri
+            WHERE tedarikci_id = ? ORDER BY tarih DESC, id DESC LIMIT ?
+        """, (tedarikci_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_total_supplier_debt():
+    return round(sum(s["bakiye"] for s in list_suppliers()), 2)
 
 
 # --- Canlı stok / düşük stok uyarısı ---

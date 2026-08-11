@@ -16,7 +16,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from cost_import import import_product_costs
-from database import get_connection, upsert_product_costs
+from database import assign_supplier_to_sku, get_connection, upsert_product_costs
 
 bp = Blueprint("cost_routes", __name__)
 
@@ -89,7 +89,7 @@ def list_product_costs():
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT sku, product_name, cost_incl_vat, cost_excl_vat,
-                      sale_price_incl_vat, sale_price_excl_vat, updated_at
+                      sale_price_incl_vat, sale_price_excl_vat, tedarikci_id, updated_at
                FROM product_costs ORDER BY updated_at DESC"""
         ).fetchall()
     return jsonify({"items": [dict(r) for r in rows]})
@@ -100,3 +100,13 @@ def delete_product_cost(sku):
     with get_connection() as conn:
         conn.execute("DELETE FROM product_costs WHERE sku = ?", (sku,))
     return jsonify({"ok": True, "sku": sku})
+
+
+@bp.route("/api/product-cost/<path:sku>/tedarikci", methods=["POST"])
+def assign_product_supplier(sku):
+    """body: {tedarikci_id: int|null}. null gönderilirse SKU'nun tedarikçi
+    ataması kaldırılır (bir daha satış borcu birikmez, geçmiş hareketler kalır)."""
+    data = request.get_json(silent=True) or {}
+    tedarikci_id = data.get("tedarikci_id")
+    assign_supplier_to_sku(sku, tedarikci_id)
+    return jsonify({"ok": True, "sku": sku, "tedarikci_id": tedarikci_id})
