@@ -54,6 +54,9 @@ init_db()
 from blueprints.cost_routes import bp as cost_routes_bp  # noqa: E402 (init_db'den sonra olmalı)
 app.register_blueprint(cost_routes_bp)
 
+from blueprints.supplier_routes import bp as supplier_routes_bp  # noqa: E402
+app.register_blueprint(supplier_routes_bp)
+
 from blueprints.stock_routes import bp as stock_routes_bp  # noqa: E402
 app.register_blueprint(stock_routes_bp)
 
