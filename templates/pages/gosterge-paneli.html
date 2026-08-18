@@ -71,12 +71,17 @@
         </div>
         <div class="mpc-head-right">
           <span id="monthlyProfitInProgressBadge" class="mpc-badge is-hidden"></span>
+          <div id="monthlyProfitViewSwitch" class="mpc-view-switch" role="tablist">
+            <button type="button" class="mpc-view-switch-btn is-active" data-view="trend" role="tab" aria-selected="true">Trend Analizi</button>
+            <button type="button" class="mpc-view-switch-btn" data-view="cfo" role="tab" aria-selected="false">Finansal Özet</button>
+          </div>
           <div id="monthlyProfitMetricSelector" class="mpc-selector"></div>
         </div>
       </div>
       <div id="monthly-loading" class="loading loading-sm">Yükleniyor…</div>
       <div id="monthlyProfitChartWrap" class="mpc-chart-wrap is-hidden">
         <canvas id="monthlyProfitChart"></canvas>
+        <canvas id="monthlyProfitBarChart" class="is-hidden"></canvas>
       </div>
     </div>
   </div>

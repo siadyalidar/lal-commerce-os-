@@ -153,6 +153,15 @@
   onExist('prev-btn', 'click', () => { if (currentPage > 1) loadOrders(currentPage - 1); });
   onExist('next-btn', 'click', () => loadOrders(currentPage + 1));
   onExist('status-select', 'change', () => loadOrders(1));
+  onExist('export-btn', 'click', () => {
+    const status = document.getElementById('status-select').value;
+    const q = document.getElementById('search-input').value.trim();
+    const params = new URLSearchParams();
+    params.set('full_history', 'true');
+    if (status) params.set('status', status);
+    if (q) params.set('q', q);
+    window.location.href = `/api/orders/export?${params.toString()}`;
+  });
 
   let searchTimeout;
   onExist('search-input', 'input', () => {

@@ -236,9 +236,74 @@ def _migrate_growth_columns(conn):
         conn.execute("ALTER TABLE order_lines ADD COLUMN marketplace_discount REAL")
 
 
+def _migrate_supplier_debt_v2(conn):
+    """Toptancı borcu düzeltmeleri (11.08.2026):
+    1) tedarikci_borc_hareketleri.tip CHECK kısıtına 'duzeltme' eklenir —
+       elle bakiye düzeltme/sıfırlama 'odeme'den ayrı tutulur, böylece
+       son ödeme tarihi sadece gerçek ödemeleri yansıtır.
+    2) Faturayla (31.07.2026 tarihli tedarikçi faturası) karşılaştırılıp
+       KDV HARİÇ yazıldığı tespit edilen 4 SKU'nun cost_incl_vat değeri
+       KDV dahile düzeltilir.
+    3) SKU'su ve adı olmayan bozuk product_costs satırı silinir.
+    4) Her tedarikçi için o ana kadar birikmiş bakiye, dengeleyici bir
+       'duzeltme' hareketiyle sıfırlanır (geçmiş hareketler SİLİNMEZ,
+       sadece bakiye kapatılır). 03.08.2026 sonrası satışlar normal
+       şekilde 'satis' hareketleriyle birikmeye devam eder."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tedarikci_borc_hareketleri'"
+    ).fetchone()
+    if row and "'duzeltme'" not in row[0]:
+        conn.executescript("""
+            ALTER TABLE tedarikci_borc_hareketleri RENAME TO tedarikci_borc_hareketleri_old;
+            CREATE TABLE tedarikci_borc_hareketleri (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tedarikci_id INTEGER NOT NULL REFERENCES tedarikciler(id),
+                tip TEXT NOT NULL CHECK(tip IN ('satis','odeme','duzeltme')),
+                tutar REAL NOT NULL,
+                order_line_key TEXT,
+                aciklama TEXT,
+                tarih TEXT DEFAULT (datetime('now', 'localtime')),
+                UNIQUE(order_line_key, tip)
+            );
+            INSERT INTO tedarikci_borc_hareketleri
+                (id, tedarikci_id, tip, tutar, order_line_key, aciklama, tarih)
+            SELECT id, tedarikci_id, tip, tutar, order_line_key, aciklama, tarih
+            FROM tedarikci_borc_hareketleri_old;
+            DROP TABLE tedarikci_borc_hareketleri_old;
+        """)
+
+    kdv_duzeltmeleri = {
+        "SH-TDS-01": 215.00,
+        "SH-PHM-001": 215.00,
+        "SH-8IN1-METER": 1215.00,
+        "SH-10TF-BG": 2575.00,
+        'SH-10"TF-BG': 2575.00,
+    }
+    for sku, dogru_tutar in kdv_duzeltmeleri.items():
+        conn.execute("UPDATE product_costs SET cost_incl_vat = ? WHERE sku = ?", (dogru_tutar, sku))
+
+    conn.execute("DELETE FROM product_costs WHERE sku IS NULL AND product_name IS NULL")
+
+    for t in conn.execute("SELECT id FROM tedarikciler").fetchall():
+        bakiye = conn.execute("""
+            SELECT COALESCE(SUM(CASE
+                WHEN tip='satis' THEN tutar
+                WHEN tip='odeme' THEN -tutar
+                WHEN tip='duzeltme' THEN tutar
+                ELSE 0 END), 0)
+            FROM tedarikci_borc_hareketleri WHERE tedarikci_id = ?
+        """, (t["id"],)).fetchone()[0]
+        if round(bakiye, 2) != 0:
+            conn.execute("""
+                INSERT INTO tedarikci_borc_hareketleri (tedarikci_id, tip, tutar, aciklama)
+                VALUES (?, 'duzeltme', ?, ?)
+            """, (t["id"], -round(bakiye, 2), "Gecmis borc sifirlama (11.08.2026) - 03.08.2026 oncesi odendi"))
+
+
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
     ("2026_08_09_growth_columns", _migrate_growth_columns),
+    ("2026_08_11_supplier_debt_v2", _migrate_supplier_debt_v2),
 ]
 
 def init_db():
@@ -520,9 +585,19 @@ def upsert_orders(rows):
         """, rows)
 
 
+# Bu durumlarda sipariş iptal/iade olmuş sayılır, borç hareketi YAZILMAZ.
+# Trendyol: Cancelled/Returned. Hepsiburada: ClaimCreated (iade/şikayet
+# talebi oluşturulmuş). 11.08.2026 eklendi.
+_EXCLUDED_ORDER_STATUSES = {
+    "trendyol": {"Cancelled", "Returned"},
+    "hepsiburada": {"ClaimCreated"},
+}
+
+
 def _sync_supplier_debt(conn, rows):
     """order_lines upsert edilirken çağrılır: tedarikçisi atanmış SKU'lar için
     (product_costs.cost_incl_vat x adet) kadar 'satis' borç hareketi ekler.
+    İptal/iade olmuş siparişler hariç tutulur (bkz. _EXCLUDED_ORDER_STATUSES).
 
     SKU eşleşmesi: COALESCE(merchant_sku, barcode) = product_costs.sku —
     product_costs/product_stock'ta zaten kullanılan aynı konvansiyon (trendyol
@@ -533,8 +608,9 @@ def _sync_supplier_debt(conn, rows):
     borç ikinci kez eklenmez (INSERT OR IGNORE). NOT: bir satırın miktarı
     sonradan değişirse (ör. Trendyol/HB tarafında düzeltme) borç kaydı
     GÜNCELLENMEZ, çünkü ilk senkronda zaten yazılmış olur — bu istisnai bir
-    durum, fark edilirse elle bir 'odeme' veya düzeltme hareketiyle telafi
-    edilmesi gerekir."""
+    durum, fark edilirse elle bir 'odeme' veya 'duzeltme' hareketiyle telafi
+    edilmesi gerekir. NOT 2: bir sipariş 'satis' borcu yazıldıktan SONRA
+    iptal/iade olursa, bu hareket otomatik geri alınmaz (aynı istisnai durum)."""
     tedarikcili_skus = {r[0] for r in conn.execute(
         "SELECT sku FROM product_costs WHERE tedarikci_id IS NOT NULL"
     ).fetchall()}
@@ -553,6 +629,21 @@ def _sync_supplier_debt(conn, rows):
     if not cost_map:
         return
 
+    # İlgili siparişlerin durumlarını çek (iptal/iade filtresi için)
+    pkg_ids = {(r.get("marketplace"), r.get("shipment_package_id")) for r in rows}
+    status_map = {}
+    for mp in {p[0] for p in pkg_ids}:
+        ids = [p[1] for p in pkg_ids if p[0] == mp]
+        if not ids:
+            continue
+        id_placeholders = ",".join("?" for _ in ids)
+        for row in conn.execute(
+            f"""SELECT shipment_package_id, status FROM orders
+                WHERE marketplace = ? AND shipment_package_id IN ({id_placeholders})""",
+            [mp, *ids],
+        ).fetchall():
+            status_map[(mp, row["shipment_package_id"])] = row["status"]
+
     debt_rows = []
     for r in rows:
         sku = r.get("merchant_sku") or r.get("barcode")
@@ -560,6 +651,10 @@ def _sync_supplier_debt(conn, rows):
             continue
         adet = r.get("quantity") or 0
         if not adet:
+            continue
+        mp = r.get("marketplace")
+        status = status_map.get((mp, r.get("shipment_package_id")))
+        if status in _EXCLUDED_ORDER_STATUSES.get(mp, set()):
             continue
         cost_incl_vat, tedarikci_id = cost_map[sku]
         line_key = f"{r.get('marketplace')}:{r.get('shipment_package_id')}:{r.get('barcode')}"
@@ -734,19 +829,28 @@ def upsert_product_costs(rows):
 # --- Toptancı borcu ---
 
 def list_suppliers():
-    """Her tedarikçi için ad + güncel bakiye (toplam satış borcu - toplam ödeme)."""
+    """Her tedarikçi için ad + güncel bakiye (satış borcu - ödeme + düzeltme)
+    + son ödeme tarihi (sadece tip='odeme' bakar, 'duzeltme' hariç -- böylece
+    manuel bakiye düzeltmeleri "ödeme yaptım" gibi görünmez)."""
     with get_connection() as conn:
         rows = conn.execute("""
             SELECT t.id, t.ad,
                    COALESCE(SUM(CASE WHEN h.tip='satis' THEN h.tutar ELSE 0 END),0) AS toplam_satis,
-                   COALESCE(SUM(CASE WHEN h.tip='odeme' THEN h.tutar ELSE 0 END),0) AS toplam_odeme
+                   COALESCE(SUM(CASE WHEN h.tip='odeme' THEN h.tutar ELSE 0 END),0) AS toplam_odeme,
+                   COALESCE(SUM(CASE WHEN h.tip='duzeltme' THEN h.tutar ELSE 0 END),0) AS toplam_duzeltme,
+                   MAX(CASE WHEN h.tip='odeme' THEN h.tarih ELSE NULL END) AS son_odeme_tarihi
             FROM tedarikciler t
             LEFT JOIN tedarikci_borc_hareketleri h ON h.tedarikci_id = t.id
             GROUP BY t.id, t.ad
             ORDER BY t.ad
         """).fetchall()
     return [
-        {"id": r["id"], "ad": r["ad"], "bakiye": round(r["toplam_satis"] - r["toplam_odeme"], 2)}
+        {
+            "id": r["id"],
+            "ad": r["ad"],
+            "bakiye": round(r["toplam_satis"] - r["toplam_odeme"] + r["toplam_duzeltme"], 2),
+            "son_odeme_tarihi": r["son_odeme_tarihi"],
+        }
         for r in rows
     ]
 
@@ -771,11 +875,45 @@ def assign_supplier_to_sku(sku, tedarikci_id):
 
 
 def add_supplier_payment(tedarikci_id, tutar, aciklama=""):
+    """'Ödeme Ekle' butonu: gerçek bir ödeme kaydı. Bakiyeyi düşürür VE
+    son_odeme_tarihi'ni günceller."""
     with get_connection() as conn:
         conn.execute("""
             INSERT INTO tedarikci_borc_hareketleri (tedarikci_id, tip, tutar, aciklama)
             VALUES (?, 'odeme', ?, ?)
         """, (tedarikci_id, tutar, aciklama))
+
+
+def add_supplier_adjustment(tedarikci_id, tutar, aciklama=""):
+    """'Borç Ekle' / manuel bakiye düzeltme butonu: tutar pozitifse bakiyeyi
+    artırır (elle borç ekleme), negatifse azaltır (düzeltme/sıfırlama).
+    Gerçek bir ödeme SAYILMAZ -- son_odeme_tarihi'ni etkilemez."""
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO tedarikci_borc_hareketleri (tedarikci_id, tip, tutar, aciklama)
+            VALUES (?, 'duzeltme', ?, ?)
+        """, (tedarikci_id, tutar, aciklama))
+
+
+def reset_supplier_debt(tedarikci_id, aciklama="Bakiye sifirlama"):
+    """Tedarikçinin o anki bakiyesini dengeleyici bir 'duzeltme' hareketiyle
+    sıfırlar. Geçmiş hareketler silinmez, sadece bakiye kapatılır."""
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT COALESCE(SUM(CASE
+                WHEN tip='satis' THEN tutar
+                WHEN tip='odeme' THEN -tutar
+                WHEN tip='duzeltme' THEN tutar
+                ELSE 0 END), 0) AS bakiye
+            FROM tedarikci_borc_hareketleri WHERE tedarikci_id = ?
+        """, (tedarikci_id,)).fetchone()
+        bakiye = round(row["bakiye"], 2)
+        if bakiye != 0:
+            conn.execute("""
+                INSERT INTO tedarikci_borc_hareketleri (tedarikci_id, tip, tutar, aciklama)
+                VALUES (?, 'duzeltme', ?, ?)
+            """, (tedarikci_id, -bakiye, aciklama))
+        return -bakiye
 
 
 def list_supplier_ledger(tedarikci_id, limit=200):
@@ -789,6 +927,51 @@ def list_supplier_ledger(tedarikci_id, limit=200):
 
 def get_total_supplier_debt():
     return round(sum(s["bakiye"] for s in list_suppliers()), 2)
+
+
+def list_sales_since(since_date_str, exclude_cancelled=True):
+    """since_date_str: 'YYYY-MM-DD' (yerel tarih, ör. '2026-08-03'). O tarih
+    00:00'dan itibaren (yerel saat) satılan tüm order_lines satırlarını
+    döner. exclude_cancelled=True ise iptal/iade siparişler hariç tutulur
+    (bkz. _EXCLUDED_ORDER_STATUSES). order_date epoch ms olarak tutulur,
+    Trendyol/HB API konvansiyonu.
+
+    Excel/PDF'e aktarım için frontend'de kullanılmak üzere düz bir liste
+    döner: marketplace, tarih, sipariş no, durum, sku, ürün adı, adet,
+    birim fiyat, tutar."""
+    import datetime as _dt
+    dt = _dt.datetime.strptime(since_date_str, "%Y-%m-%d")
+    since_epoch_ms = int(dt.timestamp() * 1000)
+
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT o.marketplace, o.order_number, o.order_date, o.status,
+                   ol.barcode, ol.merchant_sku, ol.product_name, ol.quantity, ol.line_unit_price
+            FROM order_lines ol
+            JOIN orders o ON o.marketplace = ol.marketplace
+                          AND o.shipment_package_id = ol.shipment_package_id
+            WHERE o.order_date >= ?
+            ORDER BY o.order_date ASC
+        """, (since_epoch_ms,)).fetchall()
+
+    result = []
+    for r in rows:
+        if exclude_cancelled and r["status"] in _EXCLUDED_ORDER_STATUSES.get(r["marketplace"], set()):
+            continue
+        adet = r["quantity"] or 0
+        birim = r["line_unit_price"] or 0
+        result.append({
+            "marketplace": r["marketplace"],
+            "order_number": r["order_number"],
+            "order_date": r["order_date"],
+            "status": r["status"],
+            "sku": r["merchant_sku"] or r["barcode"],
+            "product_name": r["product_name"],
+            "quantity": adet,
+            "unit_price": birim,
+            "total": round(adet * birim, 2),
+        })
+    return result
 
 
 def backfill_supplier_debt():

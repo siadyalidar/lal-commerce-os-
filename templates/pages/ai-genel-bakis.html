@@ -82,6 +82,15 @@
     margin-top: 2px;
   }
 
+  /* AI Cockpit KPI kartlari: .hero-stat ikon+satir duzeni icin tasarlandi
+     (bkz legacy.css), burada ikon yok - icerigi dikey istifle, yoksa
+     label/value/trend/sub yan yana sikisip metin harf harf kiriliyor. */
+  #ai2-kpi-grid .hero-stat {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
   /* ---- Aylık Hedef & Momentum ---- */
   .ai2-momentum-figures {
     display: grid;

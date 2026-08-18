@@ -14,7 +14,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 import requests
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from database import get_connection, list_product_images
 from finance_engine import best_sellers as compute_best_sellers
@@ -307,6 +307,158 @@ def api_orders():
         "start_date": start_dt.strftime("%Y-%m-%d"),
         "end_date": (end_dt - timedelta(days=1)).strftime("%Y-%m-%d"),
     })
+
+@bp.route("/api/orders/export")
+def api_orders_export():
+    args = request.args
+    end_dt = datetime.now()
+    if args.get("full_history", "").lower() == "true":
+        start_dt = DATA_START_DATE
+    elif args.get("start_date"):
+        try:
+            start_dt = datetime.strptime(args["start_date"], "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "start_date formatı YYYY-MM-DD olmalı."}), 400
+        if args.get("end_date"):
+            try:
+                end_dt = datetime.strptime(args["end_date"], "%Y-%m-%d") + timedelta(days=1)
+            except ValueError:
+                return jsonify({"error": "end_date formatı YYYY-MM-DD olmalı."}), 400
+    else:
+        days = args.get("days", default=30, type=int)
+        days = max(1, min(days or 30, 3650))
+        start_dt = end_dt - timedelta(days=days)
+
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+
+    status = (args.get("status") or "").strip()
+    q = (args.get("q") or "").strip()
+    marketplace = (args.get("marketplace") or "").strip().lower()
+    mp_filter = marketplace if marketplace in ("trendyol", "hepsiburada") else None
+
+    where = ["order_date BETWEEN ? AND ?"]
+    params = [start_ms, end_ms]
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    if q:
+        where.append("(order_number LIKE ? OR customer LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    if mp_filter:
+        where.append("marketplace = ?")
+        params.append(mp_filter)
+    where_sql = " AND ".join(where)
+
+    with get_connection() as conn:
+        order_rows = conn.execute(
+            f"""SELECT * FROM orders WHERE {where_sql}
+                ORDER BY order_date DESC""",
+            params,
+        ).fetchall()
+
+        pairs = [(r["marketplace"], r["shipment_package_id"]) for r in order_rows]
+        lines_by_spid = defaultdict(list)
+        if pairs:
+            placeholders = ",".join(["(?,?)"] * len(pairs))
+            flat_params = [v for pair in pairs for v in pair]
+            line_rows = conn.execute(
+                f"""SELECT * FROM order_lines WHERE (marketplace, shipment_package_id) IN ({placeholders})""",
+                flat_params,
+            ).fetchall()
+            for ln in line_rows:
+                lines_by_spid[(ln["marketplace"], ln["shipment_package_id"])].append({
+                    "productName": ln["product_name"],
+                    "merchantSku": ln["merchant_sku"],
+                    "quantity": ln["quantity"],
+                })
+
+    try:
+        profit_map = _build_order_profit_map(start_dt, end_dt, marketplace_filter=mp_filter)
+    except Exception:
+        profit_map = {}
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+    except ImportError:
+        return jsonify({
+            "error": "openpyxl kurulu değil. Terminalde şunu çalıştır: pip3 install openpyxl"
+        }), 500
+    from io import BytesIO
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Siparişler"
+    headers = [
+        "Tarih", "Sipariş No", "Pazaryeri", "Müşteri", "Durum",
+        "Kargo", "Ürünler", "Brüt Tutar", "İndirim", "Net Tutar", "Net Kâr",
+    ]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for r in order_rows:
+        profit_info = profit_map.get((r["marketplace"], r["order_number"]), {})
+        order_date = datetime.fromtimestamp(r["order_date"] / 1000).strftime("%Y-%m-%d %H:%M")
+        line_items = lines_by_spid.get((r["marketplace"], r["shipment_package_id"]), [])
+        urunler_text = "\n".join(
+            f"{ln['productName']} x{ln['quantity']}" for ln in line_items
+        ) if line_items else ""
+        ws.append([
+            order_date,
+            r["order_number"],
+            r["marketplace"],
+            r["customer"],
+            r["status"],
+            r["cargo_provider"],
+            urunler_text,
+            r["gross_amount"],
+            r["discount_amount"],
+            r["net_amount"],
+            profit_info.get("netProfit"),
+        ])
+        ws.cell(row=ws.max_row, column=7).alignment = ws.cell(row=ws.max_row, column=7).alignment.copy(wrapText=True)
+
+    for col in ws.columns:
+        max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+    product_totals = defaultdict(lambda: {"quantity": 0, "sku": None})
+    for line_list in lines_by_spid.values():
+        for ln in line_list:
+            key = ln["productName"] or "(İsimsiz Ürün)"
+            product_totals[key]["quantity"] += ln["quantity"] or 0
+            if not product_totals[key]["sku"]:
+                product_totals[key]["sku"] = ln["merchantSku"]
+
+    ws2 = wb.create_sheet("Ürün Özeti")
+    ws2.append(["Ürün Adı", "SKU", "Toplam Adet"])
+    for cell in ws2[1]:
+        cell.font = Font(bold=True)
+
+    sorted_products = sorted(product_totals.items(), key=lambda kv: kv[1]["quantity"], reverse=True)
+    for name, info in sorted_products:
+        ws2.append([name, info["sku"], info["quantity"]])
+
+    for col in ws2.columns:
+        max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col)
+        ws2.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = (
+        f"siparisler_{start_dt.strftime('%Y%m%d')}_"
+        f"{(end_dt - timedelta(days=1)).strftime('%Y%m%d')}.xlsx"
+    )
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 @bp.route("/api/product-performance")
 def api_product_performance():

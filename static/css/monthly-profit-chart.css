@@ -23,6 +23,34 @@
   flex-wrap: wrap;
 }
 
+/* ---------- Görünüm seçici (Trend Analizi / Finansal Özet) ----------
+   Bilinçli olarak mp-switch (marketplace filtresi) ile AYNI kalıp değil —
+   o üst bar'da zaten var, burada birebir aynı görünürse ikisi karışabilir.
+   Bu yüzden "chip" ailesiyle aynı sakin dilde ama pill-içinde-pill bir
+   segmented control: küçük, tek renkli, accent kullanmıyor. */
+.mpc-view-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--lal-surface-2);
+  border: 1px solid var(--lal-border-soft);
+  border-radius: var(--lal-radius-full);
+}
+.mpc-view-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--lal-text-muted);
+  font: var(--lal-text-small);
+  padding: 5px 12px;
+  border-radius: var(--lal-radius-full);
+  cursor: pointer;
+  line-height: 1.2;
+  transition: background var(--lal-dur-fast) var(--lal-ease-out),
+              color var(--lal-dur-fast) var(--lal-ease-out);
+}
+.mpc-view-switch-btn:hover { color: var(--lal-text-main); }
+.mpc-view-switch-btn.is-active { background: var(--lal-surface); color: var(--lal-text-main); box-shadow: var(--lal-shadow-2); }
+
 /* ---------- Metrik seçici (klasik Chart.js legend'in yerini alır) ---------- */
 .mpc-selector {
   display: flex;
@@ -81,7 +109,7 @@
 /* ---------- Grafik alanı + özel tooltip konteyneri ---------- */
 .mpc-chart-wrap {
   position: relative;
-  height: 340px;
+  height: 380px;
 }
 .mpc-chart-wrap canvas { position: relative; z-index: 1; }
 
@@ -129,6 +157,23 @@
 .mpc-tooltip-margin { font-size: 11.5px; color: var(--lal-text-faint); display: flex; justify-content: space-between; gap: var(--lal-space-3); }
 
 @media (max-width: 720px) {
-  .mpc-chart-wrap { height: 280px; }
+  .mpc-chart-wrap { height: 300px; }
   .mpc-tooltip { min-width: 180px; }
+}
+
+
+/* LAL Finance Chart Switch Fix */
+.mpc-chart-wrap {
+  position: relative;
+}
+
+.mpc-chart-wrap > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.mpc-chart-wrap > canvas.is-hidden {
+  display: none !important;
 }
