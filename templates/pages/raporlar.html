@@ -13,6 +13,10 @@
   <span>Üstteki pazaryeri ve tarih filtresi tüm raporları birlikte günceller.</span>
 </section>
 
+<div class="reports-toolbar">
+  <button type="button" id="report-export-btn" class="lal-btn lal-btn-secondary reports-export-btn">CSV Dışa Aktar</button>
+</div>
+
 <div id="reports-loading" class="loading">Rapor hazırlanıyor…</div>
 <div id="reports-content" class="is-hidden">
   <section class="reports-kpis">
@@ -24,13 +28,30 @@
 
   <div class="reports-grid">
     <section class="panel reports-chart-panel">
-      <div class="panel-header-row"><div><h2>Günlük satış ve kâr</h2><p class="panel-note">Sipariş tarihine göre hesaplanır.</p></div></div>
+      <div class="panel-header-row"><div><h2>Günlük satış ve brüt kâr</h2><p class="panel-note">Sipariş tarihine göre hesaplanır. Kâr çizgisi overhead/iade düşülmeden önceki brüt kârdır; dönemsel net kâr için üstteki KPI'ya bakın.</p></div></div>
       <div class="reports-chart-wrap"><canvas id="reportsTrendChart"></canvas></div>
     </section>
     <section class="panel">
       <h2>Pazaryeri karşılaştırması</h2>
       <p class="panel-note">Seçili aralıktaki gerçek/tahmini net kâr katkısı.</p>
       <div id="report-marketplaces" class="reports-marketplaces"></div>
+    </section>
+  </div>
+
+  <section class="panel reports-waterfall-panel">
+    <h2>Finansal Waterfall</h2>
+    <p class="panel-note">Ciro'dan net kâra kadar her kalem sırayla.</p>
+    <div id="report-waterfall" class="reports-waterfall"></div>
+  </section>
+
+  <div class="reports-grid">
+    <section class="panel">
+      <h2>İade Analizi</h2>
+      <div id="report-returns" class="reports-kv-list"></div>
+    </section>
+    <section class="panel">
+      <h2>Gider Analizi</h2>
+      <div id="report-expenses" class="reports-kv-list"></div>
     </section>
   </div>
 

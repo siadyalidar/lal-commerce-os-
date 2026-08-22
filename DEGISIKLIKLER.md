@@ -95,3 +95,22 @@ python -m pytest tests/ -v
   gerektiren ayrı, dikkatli bir refactor.
 - Trendyol/HB scraper'larının (external_payout_scraper.py) ToS/sürdürülebilirlik
   riski koda dokunulmadan olduğu gibi bırakıldı — bu bir mimari/iş kararı.
+
+## İade Kargosu (Return Shipping) — NOT AVAILABLE (22.08.2026 doğrulandı)
+
+Gerçek `trendyol_data.db` verisi ile doğrulandı:
+- HB: 21 gerçek `Return` işleminin (settlements) tamamı `cargo_costs`'ta
+  kontrol edildi — her birinde yalnızca 1 kargo satırı var ve bunların
+  tamamı `transactionType='ShipmentCostSharingExpense'` (outbound/normal
+  kargo). `OneClickReturnShipmentCostSharingExpense`,
+  `ReturnShipmentCostSharingExpense`, `ReturnDeliveryProcessingFee` gibi
+  iade-özel tipler `sync_core.py`'de API'ye açıkça istenmesine rağmen
+  (satır 844-846, `_HB_CARGO_TRANSACTION_TYPES`) gerçek veride hiç
+  görünmüyor (401 satırın tamamı taranmış, "iade"/"return" içeren 0 satır).
+- Trendyol: cargo_costs ingestion'ında zaten yön/tip ayrımı yok (bilinen kısıt).
+
+Sonuç: İade kargosu maliyeti şu an hiçbir marketplace için ayrı
+modellenmiyor. netProfit hesaplamasına dahil DEĞİL. Gerçek veri
+sağlanırsa (HB API'nin ilerde bu tipleri döndürmesi durumunda) yeniden
+değerlendirilebilir. Tahmini/varsayımsal değer eklenmedi (proje ilkesi:
+no estimates presented as real data).

@@ -19,11 +19,74 @@ function renderReportsChart(daily) {
       labels: daily.map(item => fmtDateShort(item.date)),
       datasets: [
         { label: 'Ciro', data: daily.map(item => item.revenue), backgroundColor: styles.getPropertyValue('--lal-accent').trim(), borderRadius: 4 },
-        { label: 'Kâr', data: daily.map(item => item.profit), type: 'line', borderColor: styles.getPropertyValue('--lal-green').trim(), backgroundColor: 'transparent', tension: .3, spanGaps: true },
+        { label: 'Brüt Kâr', data: daily.map(item => item.profit), type: 'line', borderColor: styles.getPropertyValue('--lal-green').trim(), backgroundColor: 'transparent', tension: .3, spanGaps: true },
       ],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: styles.getPropertyValue('--lal-text-main').trim() } } }, scales: { x: { ticks: { color: styles.getPropertyValue('--lal-text-muted').trim() }, grid: { display: false } }, y: { ticks: { color: styles.getPropertyValue('--lal-text-muted').trim(), callback: value => fmtTL(value) }, grid: { color: styles.getPropertyValue('--lal-border').trim() } } } },
   });
+}
+
+function waterfallRow(label, value, opts) {
+  opts = opts || {};
+  const cls = value < 0 ? 'lal-profit-neg' : (opts.highlight ? 'lal-profit-pos' : '');
+  return `<div class="reports-waterfall-row${opts.highlight ? ' is-highlight' : ''}"><span>${label}</span><strong class="${cls}">${fmtTL(value)}</strong></div>`;
+}
+
+function renderWaterfall(totals) {
+  const el = document.getElementById('report-waterfall');
+  if (!el) return;
+  el.innerHTML = [
+    waterfallRow('Ciro (Brüt Gelir)', totals.grossRevenue),
+    waterfallRow('İade Tutarı', -Math.abs(totals.returnAmount)),
+    waterfallRow('Net Ciro', totals.netRevenue),
+    waterfallRow('Komisyon', -Math.abs(totals.commission)),
+    waterfallRow('Hizmet Bedeli', -Math.abs(totals.serviceFee)),
+    waterfallRow('Kargo Toplamı', -Math.abs(totals.cargoTotal)),
+    waterfallRow('Brüt Kâr', totals.grossProfit),
+    waterfallRow('COGS İade Geri Alımı', totals.cogsReversalTotal),
+    waterfallRow('Stopaj', -Math.abs(totals.stoppage)),
+    waterfallRow('Platform Hizmet Bedeli', -Math.abs(totals.platformServiceFee)),
+    waterfallRow('Nakit Avans Maliyeti', -Math.abs(totals.cashAdvanceCost)),
+    waterfallRow('Net Kâr', totals.netProfit, { highlight: true }),
+    waterfallRow('Tahmini Ödenecek KDV', -Math.abs(totals.vatPayableEstimate)),
+    waterfallRow('Tahmini KDV Sonrası Net Kâr', totals.netProfitAfterVatEstimate, { highlight: true }),
+  ].join('');
+}
+
+function kvRow(label, value) {
+  return `<div class="reports-kv-row"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function renderReturnsPanel(totals, byMarketplace) {
+  const el = document.getElementById('report-returns');
+  if (!el) return;
+  const rows = [
+    kvRow('İade Adedi', fmtNum(totals.returnCount)),
+    kvRow('İade Tutarı', fmtTL(totals.returnAmount)),
+    kvRow('COGS İade Geri Alımı', fmtTL(totals.cogsReversalTotal)),
+  ];
+  Object.entries(byMarketplace || {}).forEach(([name, values]) => {
+    if (values.returnCount) rows.push(kvRow(`${marketplaceLabel(name)} iade adedi`, fmtNum(values.returnCount)));
+  });
+  el.innerHTML = rows.join('');
+}
+
+function renderExpensesPanel(totals) {
+  const el = document.getElementById('report-expenses');
+  if (!el) return;
+  el.innerHTML = [
+    kvRow('Komisyon', fmtTL(totals.commission)),
+    kvRow('Hizmet Bedeli', fmtTL(totals.serviceFee)),
+    kvRow('Kargo Toplamı', fmtTL(totals.cargoTotal)),
+    kvRow('Stopaj', fmtTL(totals.stoppage)),
+    kvRow('Platform Hizmet Bedeli', fmtTL(totals.platformServiceFee)),
+    kvRow('Nakit Avans Maliyeti', fmtTL(totals.cashAdvanceCost)),
+    kvRow('Toplam Overhead', fmtTL(totals.overheadTotal)),
+  ].join('');
+}
+
+function currentReportsQuery() {
+  return rangeQueryParam();
 }
 
 function renderReports(data) {
@@ -34,6 +97,9 @@ function renderReports(data) {
   safeText('report-quantity', fmtNum(data.daily.reduce((sum, item) => sum + item.quantity, 0)));
 
   renderReportsChart(data.daily);
+  renderWaterfall(totals);
+  renderReturnsPanel(totals, data.byMarketplace);
+  renderExpensesPanel(totals);
   const mpEl = document.getElementById('report-marketplaces');
   const entries = Object.entries(data.byMarketplace || {});
   mpEl.innerHTML = entries.length ? entries.map(([name, values]) => `<div class="reports-marketplace-row"><span>${marketplaceLabel(name)}</span><strong>${fmtTL(values.netProfit)}</strong><small>${values.grossRevenue ? fmtPct(values.netProfit / values.grossRevenue) : '–'} marj · ${fmtNum(values.orderCount)} sipariş</small></div>`).join('') : '<div class="lal-empty-state">Seçili filtrede pazaryeri verisi yok.</div>';
@@ -71,6 +137,10 @@ async function loadReports() {
     loading.classList.add('is-hidden');
   }
 }
+
+document.getElementById('report-export-btn')?.addEventListener('click', () => {
+  window.location.href = `/api/reports/export?${currentReportsQuery()}`;
+});
 
 document.addEventListener('lal:data-refresh', loadReports);
 document.addEventListener('lal:theme-change', () => { if (document.getElementById('reports-content') && !document.getElementById('reports-content').classList.contains('is-hidden')) loadReports(); });

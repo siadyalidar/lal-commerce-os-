@@ -12,3 +12,23 @@
 .reports-quality { margin-bottom:var(--lal-space-4); }
 @media (max-width: 900px) { .reports-kpis,.reports-grid { grid-template-columns:1fr 1fr; } }
 @media (max-width: 560px) { .reports-kpis,.reports-grid { grid-template-columns:1fr; } }
+
+/* ---- Görev 2 eklemeleri: waterfall / iade / gider panelleri + export butonu ---- */
+.reports-toolbar { display:flex; justify-content:flex-end; margin-bottom:var(--lal-space-4); }
+.reports-export-btn { flex-shrink:0; white-space:nowrap; }
+
+.reports-waterfall-panel { margin-bottom:var(--lal-space-4); }
+.reports-waterfall { display:grid; gap:var(--lal-space-1); }
+.reports-waterfall-row { align-items:center; border-bottom:1px solid var(--lal-border); display:flex; justify-content:space-between; padding:var(--lal-space-2) 0; }
+.reports-waterfall-row span { color:var(--lal-text-muted); font-size:.88rem; }
+.reports-waterfall-row strong { font-family:var(--lal-font-mono); }
+.reports-waterfall-row.is-highlight { border-bottom:2px solid var(--lal-border); }
+.reports-waterfall-row.is-highlight span { color:var(--lal-text-main); font-weight:600; }
+.reports-waterfall-row.is-highlight strong { font-size:1.05rem; }
+
+.reports-kv-list { display:grid; gap:var(--lal-space-1); }
+.reports-kv-row { align-items:center; border-bottom:1px solid var(--lal-border); display:flex; justify-content:space-between; padding:var(--lal-space-2) 0; }
+.reports-kv-row span { color:var(--lal-text-muted); font-size:.88rem; }
+.reports-kv-row strong { font-family:var(--lal-font-mono); }
+
+@media (max-width: 640px) { .reports-toolbar { justify-content:stretch; } .reports-export-btn { width:100%; } }

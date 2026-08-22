@@ -1,9 +1,11 @@
 """Raporlar ekranı ve seçili tarih/pazaryeri için özet API'si."""
 
+import csv
+import io
 from collections import defaultdict
 from datetime import datetime
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, render_template, request
 
 from database import list_product_stock
 from finance_engine import best_sellers, compute_profit_summary
@@ -87,3 +89,89 @@ def reports_overview():
         "products": products,
         "stock": {"lowCount": len(low_stock), "items": low_stock[:10]},
     })
+
+
+@bp.route("/api/reports/export")
+def reports_export():
+    """Seçili tarih/pazaryeri filtresi için finansal özeti CSV olarak döner.
+
+    İKİNCİ BİR HESAPLAMA MOTORU DEĞİL: /api/reports/overview ile BİREBİR AYNI
+    compute_profit_summary() çağrısından geçer, sadece çıktıyı CSV'ye serileştirir.
+    Bu yüzden buradaki rakamlar overview/dashboard ile her zaman birebir eşleşir
+    (bkz. test_reports_export_matches_overview_totals).
+    """
+    start_dt, end_dt = _resolve_sync_range(request.args)
+    marketplace = _marketplace_arg()
+    mp_filter = None if marketplace == "all" else marketplace
+
+    try:
+        summary = compute_profit_summary(
+            start_dt=start_dt, end_dt=end_dt, marketplace_filter=mp_filter
+        )
+    except Exception as exc:
+        return jsonify({"error": f"Rapor hesaplama hatası: {exc}"}), 500
+
+    t = summary["totals"]
+
+    buffer = io.StringIO()
+    buffer.write("\ufeff")  # Excel için UTF-8 BOM
+    writer = csv.writer(buffer)
+
+    writer.writerow(["LAL Commerce OS -- Finansal Özet"])
+    writer.writerow(["Pazaryeri", marketplace])
+    writer.writerow(["Başlangıç", start_dt.strftime("%Y-%m-%d")])
+    writer.writerow(["Bitiş", end_dt.strftime("%Y-%m-%d")])
+    writer.writerow([])
+
+    writer.writerow(["Finansal Özet"])
+    financial_rows = [
+        ("Ciro (Brüt Gelir)", t["grossRevenue"]),
+        ("İade Tutarı", t["returnAmount"]),
+        ("Net Ciro", t["netRevenue"]),
+        ("Net Hakediş", t["netHakedis"]),
+        ("Komisyon", t["commission"]),
+        ("Hizmet Bedeli", t["serviceFee"]),
+        ("Kargo Toplamı", t["cargoTotal"]),
+        ("Brüt Kâr", t["grossProfit"]),
+        ("COGS İade Geri Alımı", t["cogsReversalTotal"]),
+        ("Stopaj", t["stoppage"]),
+        ("Platform Hizmet Bedeli", t["platformServiceFee"]),
+        ("Nakit Avans Maliyeti", t["cashAdvanceCost"]),
+        ("Toplam Overhead", t["overheadTotal"]),
+        ("Net Kâr", t["netProfit"]),
+        ("Satılan KDV", t["vatOnSales"]),
+        ("Alınan KDV", t["vatOnPurchases"]),
+        ("Tahmini Ödenecek KDV", t["vatPayableEstimate"]),
+        ("Tahmini KDV Sonrası Net Kâr", t["netProfitAfterVatEstimate"]),
+        ("Hakediş Net Ödeme", t["paymentOrderNet"]),
+        ("İade Adedi", t["returnCount"]),
+    ]
+    for label, value in financial_rows:
+        writer.writerow([label, value])
+
+    writer.writerow([])
+    writer.writerow(["Pazaryeri Kırılımı"])
+    writer.writerow(["Pazaryeri", "Net Kâr", "Ciro", "İade Adedi", "Sipariş Adedi"])
+    for mp_name, mp_values in (summary.get("by_marketplace") or {}).items():
+        writer.writerow([
+            mp_name,
+            mp_values.get("netProfit"),
+            mp_values.get("grossRevenue"),
+            mp_values.get("returnCount"),
+            mp_values.get("orderCount"),
+        ])
+
+    writer.writerow([])
+    writer.writerow(["Veri Kalitesi"])
+    quality = summary["data_quality"]
+    writer.writerow(["Tahmini Satır Sayısı", quality["lines_estimated_pending_settlement"]])
+    writer.writerow(["Gerçek Settlement Satır Sayısı", quality["lines_with_real_settlement"]])
+    writer.writerow(["Maliyeti Eksik SKU Sayısı", len(quality["skus_missing_cost"])])
+    writer.writerow(["Kargo Faturası Eksik Sipariş Sayısı", quality["orders_missing_cargo_invoice"]])
+
+    filename = f"lal-rapor_{marketplace}_{start_dt.strftime('%Y%m%d')}-{end_dt.strftime('%Y%m%d')}.csv"
+    return Response(
+        buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
