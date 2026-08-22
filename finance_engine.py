@@ -44,6 +44,27 @@ KANIT (28.07.2026 denetiminde gerçek DB verisiyle doğrulandı):
      netlemesiyle hesaplanıyor (önceden sadece debt kullanılıyordu).
   5) marketplace='all' artık marketplace='trendyol' + marketplace='hepsiburada'
      ile SATIR SATIR aynı formülden üretiliyor — iki farklı motor yok.
+  6) (21.08.2026) İADE EDİLEN ÜRÜNÜN COGS'U artık TERSİNE ÇEVRİLİYOR
+     (cogsReversal). Önceden bir ürün iade edildiğinde SADECE gelir tarafı
+     (return_amount, overhead üzerinden) düşülüyordu — o satırın maliyeti
+     (COGS) hâlâ tam olarak kâr'dan düşülmeye devam ediyordu, sanki ürün
+     hiç iade edilmemiş gibi. Bu, iade oranı yüksek dönemlerde net kârı
+     SİSTEMATİK OLARAK DÜŞÜK gösteriyordu. Aynı düzeltmeyle Trendyol'un
+     KISMİ iade tipi "ManualRefund"/"ManualRefundCancel" de settlement
+     senkronuna eklendi (önceden hiç çekilmiyordu — kısmi TY iadeleri
+     motöre tamamen görünmezdi, bkz. trendyol_finance.py notu).
+     COGS reversal, gerçek iade adedi API'den hiç gelmediği için (canlı TY
+     dokümantasyonunda doğrulandı) İADE TUTARININ ORİJİNAL SATIR CİROSUNA
+     ORANI ile hesaplanıyor ve HER ZAMAN "cogsReversalEstimated": true ile
+     işaretleniyor — kesin veri gibi sunulmuyor. Maliyet bilinmiyorsa
+     reversal hiç hesaplanmıyor (uydurulmuyor). Ayrıca artık her satırda
+     ayrı "returnAmount"/"netRevenue" (= grossRevenue - returnAmount) alanları
+     var; grossRevenue hiçbir zaman mutasyona uğramıyor/silinmiyor. Aynı
+     canonical-type tanıma _payout_row_delta/_payout_row_net üzerinden
+     compute_actual_payout_lag_days() ve payout_calendar()'a da taşındı,
+     yani Hakediş Takvimi de artık ManualRefund/ManualRefundCancel'ı doğru
+     tanıyor (ilk düzeltme sırasında bu iki fonksiyon atlanmıştı, aynı pas
+     içinde ayrıca fark edilip giderildi).
 
 BİLİNÇLİ OLARAK KORUNAN (dürüst) TAHMİNLER:
   - Kargo maliyeti bir sipariş içindeki satırlara EŞİT bölüştürülüyor
@@ -51,6 +72,13 @@ BİLİNÇLİ OLARAK KORUNAN (dürüst) TAHMİNLER:
   - order_lines'da karşılığı olmayan (settlement-only) satırlarda
     quantity=1 varsayılıyor ve "quantityEstimated": true ile işaretleniyor
     (bkz. dosya sonundaki BACKFILL NOTU).
+  - (21.08.2026) cogsReversal, gerçek iade ADEDİ yerine iade TUTARININ
+    orijinal ciroya ORANI kullanılarak hesaplanıyor (bkz. madde 6) —
+    satır içi birim fiyat sabitse tam isabetli, karma fiyatlandırmada
+    yaklaşık; her zaman "cogsReversalEstimated": true ile işaretli.
+  - (21.08.2026) İADE KARGOSU henüz modellenmiyor — pazaryeri API'lerinden
+    outbound/return kargo ayrımı çıkarılamıyor (cargo_costs şemasında yön
+    bilgisi yok). Uydurulmuyor; UI'da "—, veri yok" gösterilmeli, 0 değil.
 """
 
 from collections import defaultdict
@@ -77,14 +105,33 @@ _HB_SERVICE_FEE_RAW = {
 }
 _HB_RETURN_RAW = {"Return"}
 
+# 21.08.2026: Trendyol'un KISMİ iade tipleri ("ManualRefund"/"ManualRefundCancel").
+# Bunlar raw_transaction_type'ta (API'nin Türkçeleştirdiği metin) hangi string
+# olarak geleceği canlı hesapla doğrulanana kadar KESİN değil — bu yüzden
+# kategorizasyonu raw_type'a değil, BİZİM kendi yazdığımız/kontrol ettiğimiz
+# kanonik `transaction_type` (=_queried_type, trendyol_finance.py'de fetch
+# sırasında istenen tipin AYNISI, tahmine dayanmıyor) koluna dayandırıyoruz.
+# Bu sayede Türkçe metin tahmini yanlış çıksa bile kayıt sessizce "other"a
+# düşüp kaybolmuyor.
+_TY_MANUAL_REFUND_CANONICAL = {"ManualRefund", "ManualRefundCancel"}
+
 # Hiç sevk edilmemiş / oluşmamış paketler kâr hesabına dahil edilmez.
 # (bkz. eski profit_engine.py'deki aynı gerekçe — ürün depodan çıkmadıysa
 # ne gerçek maliyet ne gerçek gelir oluşur.)
 NEVER_FULFILLED_STATUSES = ("Cancelled", "İptal Edildi", "UnSupplied", "UnDelivered", "UnPacked")
 
 
-def _categorize(marketplace, raw_type):
-    """(marketplace, raw_transaction_type) -> 'sale' | 'commission' | 'service_fee' | 'return' | 'other'"""
+def _categorize(marketplace, raw_type, canonical_type=None):
+    """(marketplace, raw_transaction_type, transaction_type=None) ->
+    'sale' | 'commission' | 'service_fee' | 'return' | 'other'
+
+    canonical_type: settlements.transaction_type kolonu (=fetch sırasında
+    BİZİM istediğimiz tip, "_queried_type" — bkz. trendyol_finance.py).
+    Opsiyonel/geriye dönük uyumlu: verilmezse (eski çağrı yerleri, testler)
+    davranış TAMAMEN aynı kalır, sadece ManualRefund/ManualRefundCancel
+    tespiti atlanır."""
+    if marketplace != "hepsiburada" and canonical_type in _TY_MANUAL_REFUND_CANONICAL:
+        return "return"
     if marketplace == "hepsiburada":
         if raw_type in _HB_SALE_RAW:
             return "sale"
@@ -148,14 +195,15 @@ def _load_settlement_lines(conn, start_ms=None, end_ms=None):
 
     rows = conn.execute(f"""
         SELECT marketplace, shipment_package_id, barcode, raw_transaction_type,
-               seller_revenue, debt, credit, commission_amount, transaction_date, order_number
+               transaction_type, seller_revenue, debt, credit, commission_amount,
+               transaction_date, order_number
         FROM settlements
         WHERE {where}
     """, params).fetchall()
 
     totals = defaultdict(lambda: {
         "gross_revenue": 0.0, "commission": 0.0, "service_fee": 0.0,
-        "return_amount": 0.0, "order_number": None, "min_date": None,
+        "return_amount": 0.0, "return_count": 0, "order_number": None, "min_date": None,
     })
     for r in rows:
         spid = r["shipment_package_id"]
@@ -163,7 +211,7 @@ def _load_settlement_lines(conn, start_ms=None, end_ms=None):
             continue
         mp = r["marketplace"]
         key = (mp, spid, r["barcode"])
-        cat = _categorize(mp, r["raw_transaction_type"])
+        cat = _categorize(mp, r["raw_transaction_type"], r["transaction_type"])
         t = totals[key]
 
         if cat == "sale":
@@ -174,12 +222,24 @@ def _load_settlement_lines(conn, start_ms=None, end_ms=None):
                 t["gross_revenue"] += r["credit"] or 0.0
                 t["commission"] += r["commission_amount"] or 0.0
         elif cat == "commission":
-            # Sadece HB burada dusuyor (TY komisyonu 'sale' satirinin icinde)
-            t["commission"] += abs(r["seller_revenue"] or 0.0)
+            # Sadece HB burada dusuyor (TY komisyonu 'sale' satirinin icinde).
+            # 22.08.2026 DUZELTMESI: onceden abs() kullaniliyordu, bu da bir
+            # komisyon ucretini (negatif seller_revenue) VE onun tam iadesini
+            # (CommissionInvoiceRefund, pozitif seller_revenue) TOPLAYIP
+            # (ör. 981.5+981.5=1963.0) net sifir olmasi gereken bir tutari
+            # sahte maliyet olarak gosteriyordu. Gercek DB'de dogrulandi
+            # (HB shipment_package_id=5501255780, barcode=HBCV0000D6NQ0H).
+            # Dogru mantik: isaret KORUNUR (ucret=negatif seller_revenue ->
+            # pozitif maliyet; iade/refund=pozitif seller_revenue -> negatif
+            # maliyet, yani onceki ucretle NETLESIR) - return_amount'taki
+            # debt-credit netlemesiyle AYNI ILKE.
+            t["commission"] += -(r["seller_revenue"] or 0.0)
         elif cat == "service_fee":
-            t["service_fee"] += abs(r["seller_revenue"] or 0.0)
+            # Ayni duzeltme, ayni gerekce (bkz. yukaridaki commission notu).
+            t["service_fee"] += -(r["seller_revenue"] or 0.0)
         elif cat == "return":
             t["return_amount"] += (r["debt"] or 0.0) - (r["credit"] or 0.0)
+            t["return_count"] += 1
 
         if r["order_number"] and not t["order_number"]:
             t["order_number"] = r["order_number"]
@@ -252,18 +312,18 @@ def _load_return_totals(conn, start_ms, end_ms, order_scope=None):
     kullanılır — bkz. _gather_summary_inputs docstring'i, 08.08.2026
     düzeltmesi)."""
     rows = conn.execute("""
-        SELECT marketplace, shipment_package_id, raw_transaction_type,
+        SELECT marketplace, shipment_package_id, raw_transaction_type, transaction_type,
                COALESCE(SUM(debt), 0) AS debt_sum,
                COALESCE(SUM(credit), 0) AS credit_sum, COUNT(*) AS cnt
         FROM settlements
         WHERE transaction_date BETWEEN ? AND ?
-        GROUP BY marketplace, shipment_package_id, raw_transaction_type
+        GROUP BY marketplace, shipment_package_id, raw_transaction_type, transaction_type
     """, (start_ms, end_ms)).fetchall()
     totals = defaultdict(lambda: {"total": 0.0, "count": 0})
     for r in rows:
         if order_scope is not None and (r["marketplace"], r["shipment_package_id"]) not in order_scope:
             continue
-        if _categorize(r["marketplace"], r["raw_transaction_type"]) == "return":
+        if _categorize(r["marketplace"], r["raw_transaction_type"], r["transaction_type"]) == "return":
             totals[r["marketplace"]]["total"] += (r["debt_sum"] or 0) - (r["credit_sum"] or 0)
             totals[r["marketplace"]]["count"] += r["cnt"]
     return totals
@@ -436,6 +496,14 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
     return {
         "lines": lines,
         "settlement_totals_all": settlement_totals_all,
+        # 21.08.2026: TARİH PENCERELİ settlement toplamları — satır bazında COGS
+        # reversal hesabı için return_amount burada aranmalı (settlement_totals_all
+        # DEĞİL). settlement_totals_all TÜM GEÇMİŞİ kapsıyor (hakediş gecikmesi
+        # yüzünden kasıtlı), o yüzden içindeki return_amount'u COGS reversal için
+        # kullanmak, rapor aralığı DIŞINDAKİ bir iadeyi bu döneme sızdırırdı —
+        # tıpkı _load_return_totals'ın neden ayrıca tarih pencereli olduğu gibi
+        # (bkz. o fonksiyonun docstring'i, 08.08.2026 düzeltmesi).
+        "settlement_totals_in_range": settlement_totals_in_range,
         "return_totals": return_totals,
         "other_totals": other_totals,
         "costs": costs,
@@ -445,10 +513,26 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
     }
 
 
-def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by_order_number, lines_per_order):
+def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by_order_number, lines_per_order,
+                        settlement_totals_in_range=None):
     """Tek bir sipariş satırı için Ciro/Komisyon/KDV/Kâr hesabını yapar.
     Döner: (line_result dict, estimated: bool, missing_cost_sku: str|None,
             cargo_missing_order_number: str|None)
+
+    settlement_totals_in_range: 21.08.2026 eklendi — İADE EDİLEN ÜRÜNÜN COGS'UNU
+    orantısal olarak TERSİNE ÇEVİRMEK (cogsReversal) için kullanılır. TARİH
+    PENCERELİ olmalı (settlement_totals_all DEĞİL) — bkz. _gather_summary_inputs
+    içindeki not. None geçilirse (geriye dönük uyumluluk / bazı testler)
+    cogsReversal hiç hesaplanmaz, davranış eskisiyle birebir aynı kalır.
+
+    NEDEN ORANTISAL: Trendyol'un settlements API'si (canlı dokümantasyonda
+    doğrulandı, 21.08.2026) iade kayıtlarında HİÇBİR ZAMAN adet/quantity
+    döndürmüyor — sadece parasal tutar (debt/credit). Gerçek iade adedini
+    UYDURMAK yerine, GERÇEK iade tutarının o satırın GERÇEK orijinal cirosuna
+    oranını kullanıyoruz: bu oran, satır içi birim fiyat sabitse (normal durum)
+    MATEMATİKSEL OLARAK TAM isabetlidir, yalnızca satır içi karma/farklı
+    fiyatlandırma varsa yaklaşıktır — bu yüzden HER ZAMAN cogsReversalEstimated=True
+    ile işaretlenir, asla kesin veri gibi sunulmaz.
     """
     key = (ln["marketplace"], ln["shipment_package_id"], ln["barcode"])
     settlement = settlement_totals_all.get(key)
@@ -528,6 +612,41 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         net_hakedis_excl_vat = gross_revenue_excl_vat - (commission + service_fee) / (1 + (_sku_vat_rate(cost_row, "sale") or 0))
         profit_excl_vat = net_hakedis_excl_vat - cogs_excl_vat - cargo_line
 
+    # --- 21.08.2026: İade tutarı (satır bazında, tarih pencereli) + orantısal
+    # COGS reversal. NOT: bu değer sadece raporlama/ekleme amaçlı — line
+    # "profit" alanı KASITLI OLARAK değiştirilmiyor (bkz. dosya docstring'i,
+    # 6. madde) — cogsReversal SADECE pazaryeri/dönem toplamlarında ayrı bir
+    # kalem olarak eklenir, return_amount'un overhead'de zaten düşülüyor
+    # olmasıyla ÇAKIŞMAZ (iki farklı, birbirinden bağımsız düzeltme).
+    return_amount = 0.0
+    if settlement_totals_in_range is not None:
+        return_amount = (settlement_totals_in_range.get(key) or {}).get("return_amount", 0.0) or 0.0
+
+    net_revenue = None
+    if gross_revenue is not None:
+        net_revenue = gross_revenue - return_amount
+
+    cogs_reversal = None
+    cogs_reversal_estimated = False
+    cogs_reversal_note = None
+    if return_amount and return_amount > 0:
+        if cogs is None:
+            # Maliyet bilinmiyor -> COGS reversal UYDURULMAZ (bkz. talimat).
+            cogs_reversal_note = "missing_cost"
+        elif not gross_revenue or gross_revenue <= 0:
+            # Orijinal ciro yok/sıfır -> oran hesaplanamaz, tahmin üretilmez.
+            cogs_reversal_note = "zero_original_revenue"
+        else:
+            ratio = return_amount / gross_revenue
+            if ratio > 1.0:
+                # İade tutarı orijinal ciroyu aşıyor (örn. kupon/indirim
+                # etkileşimi, çoklu iade olayı) -> COGS'tan fazlasını asla
+                # tersine çevirme, 1.0'da sınırla ve durumu şeffaf işaretle.
+                ratio = 1.0
+                cogs_reversal_note = "return_amount_exceeds_revenue_clamped"
+            cogs_reversal = round(cogs * ratio, 2)
+            cogs_reversal_estimated = True
+
     line_result = {
         "orderNumber": ln["order_number"],
         "orderDate": ln["order_date"],
@@ -537,12 +656,17 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         "productName": ln["product_name"],
         "quantity": ln["quantity"],
         "grossRevenue": round(gross_revenue, 2) if gross_revenue is not None else None,
+        "returnAmount": round(return_amount, 2),
+        "netRevenue": round(net_revenue, 2) if net_revenue is not None else None,
         "revenueExclVat": round(gross_revenue_excl_vat, 2) if gross_revenue_excl_vat is not None else None,
         "commission": round(commission, 2) if commission is not None else None,
         "serviceFee": round(service_fee, 2) if service_fee is not None else None,
         "netHakedis": round(net_hakedis, 2) if net_hakedis is not None else None,
         "cogs": round(cogs, 2) if cogs is not None else None,
         "cogsExclVat": round(cogs_excl_vat, 2) if cogs_excl_vat is not None else None,
+        "cogsReversal": cogs_reversal,
+        "cogsReversalEstimated": cogs_reversal_estimated,
+        "cogsReversalNote": cogs_reversal_note,
         "cargo": round(cargo_line, 2),
         "vatOnSale": round(vat_on_sale, 2) if vat_on_sale is not None else None,
         "vatOnCost": round(vat_on_cost, 2) if vat_on_cost is not None else None,
@@ -589,6 +713,7 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
     bölümü için özetler."""
     mp_stats = defaultdict(lambda: {
         "gross_revenue": 0.0, "net_hakedis": 0.0, "gross_profit": 0.0, "cargo_total": 0.0,
+        "cogs_reversal_total": 0.0,
         "item_count": 0, "line_count": 0,
         "lines_with_real_settlement": 0, "lines_estimated": 0,
         "order_spids": set(),
@@ -600,6 +725,7 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
         if r["profit"] is not None:
             s["gross_profit"] += r["profit"]
         s["cargo_total"] += r["cargo"] or 0
+        s["cogs_reversal_total"] += r.get("cogsReversal") or 0
         s["item_count"] += ln["quantity"] or 0
         s["line_count"] += 1
         s["order_spids"].add(ln["shipment_package_id"] if ln["shipment_package_id"] is not None
@@ -613,17 +739,24 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
     for mp, s in mp_stats.items():
         mp_overhead = overhead_by_mp.get(mp, {"total": 0.0, "has_data": False, "return_amount": 0.0,
                                                "stoppage": 0.0, "platform_fee": 0.0, "cash_advance": 0.0})
+        # 21.08.2026: netProfit'e artık cogs_reversal_total EKLENİYOR. Bu,
+        # overhead'deki return_amount'tan TAMAMEN BAĞIMSIZ bir kalem (biri
+        # gelir tarafını, diğeri maliyet tarafını düzeltiyor) — çift sayım
+        # YOK, bkz. finance_engine.py modül docstring'i madde 6.
+        net_profit = s["gross_profit"] - mp_overhead["total"] + s["cogs_reversal_total"]
         by_marketplace[mp] = {
             "grossRevenue": round(s["gross_revenue"], 2),
+            "returnAmount": round(mp_overhead.get("return_amount", 0), 2),
+            "netRevenue": round(s["gross_revenue"] - mp_overhead.get("return_amount", 0), 2),
             "netHakedis": round(s["net_hakedis"], 2),
             "grossProfit": round(s["gross_profit"], 2),
             "cargoTotal": round(s["cargo_total"], 2),
+            "cogsReversalTotal": round(s["cogs_reversal_total"], 2),
             "stoppage": round(mp_overhead.get("stoppage", 0), 2),
             "platformServiceFee": round(mp_overhead.get("platform_fee", 0), 2),
             "cashAdvanceCost": round(mp_overhead.get("cash_advance", 0), 2),
-            "returnAmount": round(mp_overhead.get("return_amount", 0), 2),
             "overheadTotal": round(mp_overhead["total"], 2),
-            "netProfit": round(s["gross_profit"] - mp_overhead["total"], 2),
+            "netProfit": round(net_profit, 2),
             "overheadApplied": mp_overhead["has_data"],
             "returnCount": return_totals.get(mp, {}).get("count", 0),
             "paymentOrderNet": round(payment_order_by_mp.get(mp, 0), 2),
@@ -673,6 +806,7 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
         line_result, estimated, missing_cost_sku, cargo_missing_order = _build_line_result(
             ln, data["settlement_totals_all"], data["costs"],
             data["cargo_by_spid"], data["cargo_by_order_number"], data["lines_per_order"],
+            settlement_totals_in_range=data["settlement_totals_in_range"],
         )
         line_results.append(line_result)
         if estimated:
@@ -687,6 +821,7 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
     gross_profit = sum(r["profit"] for r in line_results if r["profit"] is not None)  # bkz. not (asagida overhead sonrasi net_profit'e girer)
     gross_profit_excl_vat = sum(r["profitExclVat"] for r in line_results if r["profitExclVat"] is not None)
     total_gross_revenue = sum(r["grossRevenue"] for r in line_results if r["grossRevenue"] is not None)
+    total_cogs_reversal = sum(r["cogsReversal"] for r in line_results if r.get("cogsReversal") is not None)
     total_net_hakedis = sum(r["netHakedis"] for r in line_results if r["netHakedis"] is not None)
     total_commission = sum(r["commission"] for r in line_results if r["commission"] is not None)
     total_service_fee = sum(r["serviceFee"] for r in line_results if r["serviceFee"] is not None)
@@ -713,7 +848,11 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
     # overhead_total artık İADE TUTARINI DA içeriyor (kritik düzeltme — eski
     # motorda return_total hiç düşülmüyordu, sadece raporlanıyordu).
     overhead_total = stoppage_total + platform_fee_total + cash_advance_total + return_total
-    net_profit = gross_profit - overhead_total
+    # 21.08.2026: total_cogs_reversal AYRI ve BAĞIMSIZ bir ekleme — return_total
+    # (yukarıda) SADECE gelir tarafını düzeltiyor, bu SADECE maliyet tarafını.
+    # Aynı iade olayı iki kez düşülmüyor/eklenmiyor (bkz. modül docstring'i
+    # madde 6 ve _aggregate_by_marketplace'teki aynı yorum).
+    net_profit = gross_profit - overhead_total + total_cogs_reversal
     net_profit_after_vat = net_profit - vat_payable
 
     by_marketplace = _aggregate_by_marketplace(
@@ -722,16 +861,18 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
     return {
         "totals": {
             "grossRevenue": round(total_gross_revenue, 2),
+            "returnAmount": round(return_total, 2),
+            "netRevenue": round(total_gross_revenue - return_total, 2),
             "netHakedis": round(total_net_hakedis, 2),
             "commission": round(total_commission, 2),
             "serviceFee": round(total_service_fee, 2),
             "grossProfit": round(gross_profit, 2),
             "grossProfitExclVat": round(gross_profit_excl_vat, 2),
             "cargoTotal": round(total_cargo, 2),
+            "cogsReversalTotal": round(total_cogs_reversal, 2),
             "stoppage": round(stoppage_total, 2),
             "platformServiceFee": round(platform_fee_total, 2),
             "cashAdvanceCost": round(cash_advance_total, 2),
-            "returnAmount": round(return_total, 2),
             "returnCount": return_count,
             "overheadTotal": round(overhead_total, 2),
             "netProfit": round(net_profit, 2),
@@ -770,6 +911,11 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
         m["netHakedis"] += ln["netHakedis"] or 0
         if ln["profit"] is not None:
             m["grossProfit"] += ln["profit"]
+        # 21.08.2026: cogsReversal de aya dağıtılıyor (return_amount zaten
+        # overhead üzerinden ayrı hesaplanıyor, bkz. bu fonksiyonun docstring'i
+        # — dönemsel giderler burada aya tam dağıtılmıyor, bu bilinen/dokümante
+        # edilmiş bir basitleştirme; kesin rakam her zaman compute_profit_summary).
+        m["grossProfit"] += ln.get("cogsReversal") or 0
 
     # NOT: Bu basitleştirilmiş aylık kırılım, dönemsel giderleri (stopaj,
     # platform hizmet bedeli, iade) SATIR TARİHİNE göre değil sipariş
@@ -810,15 +956,19 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
 # HAKEDİŞ TAKVİMİ (payout calendar)
 # ============================================================
 
-def _payout_row_delta(mp, raw_type, seller_revenue, debt, credit, commission_amount):
+def _payout_row_delta(mp, raw_type, seller_revenue, debt, credit, commission_amount, canonical_type=None):
     """_load_settlement_lines'daki KATEGORİ MATEMATİĞİYLE BİREBİR AYNI
     (bilinçli tekrar — orada (spid, barcode) bazında, burada (mp, gün)
     bazında gruplanıyor; formülün kendisi değişmiyor).
 
+    21.08.2026: canonical_type eklendi (opsiyonel) — ManualRefund/
+    ManualRefundCancel'ı _categorize üzerinden doğru tanıyabilmek için.
+    Verilmezse davranış eskisiyle birebir aynı kalır.
+
     Döndürür: (gross_revenue_delta, commission_delta, service_fee_delta,
                return_amount_delta)
     """
-    cat = _categorize(mp, raw_type)
+    cat = _categorize(mp, raw_type, canonical_type)
     gr = comm = svc = ret = 0.0
     if cat == "sale":
         if mp == "hepsiburada":
@@ -827,16 +977,20 @@ def _payout_row_delta(mp, raw_type, seller_revenue, debt, credit, commission_amo
             gr += credit or 0.0
             comm += commission_amount or 0.0
     elif cat == "commission":
-        comm += abs(seller_revenue or 0.0)
+        # 22.08.2026: bkz. _load_settlement_lines'daki AYNI DUZELTME NOTU
+        # (isaret korunur, abs() kullanilmiyor - HB komisyon ucreti/iadesi
+        # dogru netlesin diye). Bu iki fonksiyon BILINCLI OLARAK ayni
+        # formulu paylasiyor, bkz. bu fonksiyonun docstring'i.
+        comm += -(seller_revenue or 0.0)
     elif cat == "service_fee":
-        svc += abs(seller_revenue or 0.0)
+        svc += -(seller_revenue or 0.0)
     elif cat == "return":
         ret += (debt or 0.0) - (credit or 0.0)
     return gr, comm, svc, ret
 
 
-def _payout_row_net(mp, raw_type, seller_revenue, debt, credit, commission_amount):
-    gr, comm, svc, ret = _payout_row_delta(mp, raw_type, seller_revenue, debt, credit, commission_amount)
+def _payout_row_net(mp, raw_type, seller_revenue, debt, credit, commission_amount, canonical_type=None):
+    gr, comm, svc, ret = _payout_row_delta(mp, raw_type, seller_revenue, debt, credit, commission_amount, canonical_type)
     return gr - comm - svc - ret
 
 
@@ -878,14 +1032,14 @@ def compute_actual_payout_lag_days(min_sample_size=20):
     """
     with get_connection() as conn:
         rows = conn.execute("""
-            SELECT marketplace, raw_transaction_type, transaction_date, payment_date
+            SELECT marketplace, raw_transaction_type, transaction_type, transaction_date, payment_date
             FROM settlements
             WHERE transaction_date IS NOT NULL AND payment_date IS NOT NULL
         """).fetchall()
 
     buckets = defaultdict(list)
     for r in rows:
-        cat = _categorize(r["marketplace"], r["raw_transaction_type"])
+        cat = _categorize(r["marketplace"], r["raw_transaction_type"], r["transaction_type"])
         if cat not in ("sale", "return"):
             continue
         lag_days = (r["payment_date"] - r["transaction_date"]) / (1000 * 60 * 60 * 24)
@@ -985,14 +1139,14 @@ def payout_calendar(start_dt=None, end_dt=None, marketplace_filter=None):
 
     with get_connection() as conn:
         settlement_rows = conn.execute(f"""
-            SELECT marketplace, raw_transaction_type, seller_revenue, debt, credit,
+            SELECT marketplace, raw_transaction_type, transaction_type, seller_revenue, debt, credit,
                    commission_amount, payment_date
             FROM settlements
             WHERE {settlement_where}
         """, settlement_params).fetchall()
 
         unplanned_rows = conn.execute("""
-            SELECT marketplace, raw_transaction_type, seller_revenue, debt, credit,
+            SELECT marketplace, raw_transaction_type, transaction_type, seller_revenue, debt, credit,
                    commission_amount, transaction_date
             FROM settlements
             WHERE payment_date IS NULL
@@ -1034,16 +1188,18 @@ def payout_calendar(start_dt=None, end_dt=None, marketplace_filter=None):
             continue
         payout_dt = _round_up_to_payout_day(raw_dt, mp)
         day_key = payout_dt.strftime("%Y-%m-%d")
-        net = _payout_row_net(mp, r["raw_transaction_type"], r["seller_revenue"], r["debt"], r["credit"], r["commission_amount"])
+        net = _payout_row_net(mp, r["raw_transaction_type"], r["seller_revenue"], r["debt"], r["credit"],
+                               r["commission_amount"], r["transaction_type"])
         buckets[day_key][mp]["estimated"] += net
 
     # 3) payment_date'i hiç atanmamış satırlar -> ortalama gecikmeyle tahmini gün (lagEstimated)
     for r in unplanned_rows:
         mp = r["marketplace"]
-        cat = _categorize(mp, r["raw_transaction_type"])
+        cat = _categorize(mp, r["raw_transaction_type"], r["transaction_type"])
         if cat == "other":
             continue
-        net = _payout_row_net(mp, r["raw_transaction_type"], r["seller_revenue"], r["debt"], r["credit"], r["commission_amount"])
+        net = _payout_row_net(mp, r["raw_transaction_type"], r["seller_revenue"], r["debt"], r["credit"],
+                               r["commission_amount"], r["transaction_type"])
         tx_date_ms = r["transaction_date"]
         if tx_date_ms is None:
             true_unplanned[mp] += net

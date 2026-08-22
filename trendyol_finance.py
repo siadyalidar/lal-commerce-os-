@@ -51,7 +51,17 @@ from trendyol_client import SUPPLIER_ID, date_chunks, trendyol_get
 # Şu an profit_engine.py'nin gerçekten kullandığı tipler. Diğer tipler
 # (Discount, Coupon, Provizyon, WireTransfer, vb.) referans olarak dosya
 # sonunda listeleniyor — ileride ayrıntı eklemek isterseniz buraya taşıyın.
-SETTLEMENT_TRANSACTION_TYPES = ["Sale", "Return"]
+#
+# 21.08.2026 DÜZELTMESİ: ManualRefund/ManualRefundCancel eklendi. Trendyol'un
+# "Cari Hesap Ekstresi" dokümantasyonuna göre KISMİ iadeler "Return" tipiyle
+# DEĞİL, ayrı bir "ManualRefund" tipiyle bildiriliyor ("Bir ürün için ürün
+# tutarından daha az olacak şekilde iade kaydı oluşturuluyor ise bu kayıt
+# atılmaktadır" — resmi açıklama). "ManualRefundCancel" bunun tersidir (kısmi
+# iade sonradan iptal/mahsuplaştırılırsa). Bu iki tip önceden hiç
+# çekilmiyordu — yani KISMİ Trendyol iadeleri finans motoruna tamamen
+# görünmezdi (ne ciro tarafında ne COGS tarafında). Bkz. finance_engine.py
+# modül docstring'indeki 21.08.2026 notu.
+SETTLEMENT_TRANSACTION_TYPES = ["Sale", "Return", "ManualRefund", "ManualRefundCancel"]
 OTHER_FINANCIAL_TRANSACTION_TYPES = ["Stoppage", "CashAdvance", "DeductionInvoices", "PaymentOrder"]
 
 # ⚠️ GEÇİCİ BYPASS (05.08.2026): Bu hesapta Trendyol'un otherfinancials
@@ -77,7 +87,7 @@ if _PAYMENT_ORDER_TEMPORARILY_DISABLED:
 
 # Referans (kullanılmayan diğer tipler):
 #   settlements: Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive,
-#     ProvisionNegative, ManualRefund, ManualRefundCancel, SellerRevenuePositive,
+#     ProvisionNegative, SellerRevenuePositive,
 #     SellerRevenueNegative, CommissionPositive, CommissionNegative,
 #     SellerRevenuePositiveCancel, SellerRevenueNegativeCancel,
 #     CommissionPositiveCancel, CommissionNegativeCancel
