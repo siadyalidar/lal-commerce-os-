@@ -50,14 +50,30 @@
     return `<span class="${cls}" title="${title}">${prefix}${fmtTL2(o.netProfit)}</span>`;
   }
 
+  // Ürün görseli SADECE Trendyol'dan senkronize ediliyor ("Ürün Ayarları"
+  // sayfasındaki manuel senkron butonu — otomatik/periyodik bir görsel
+  // senkronu yok). Aynı SKU Hepsiburada'da da satılıyorsa backend
+  // (/api/orders) aynı görseli otomatik eşleştiriyor; hiç senkron
+  // edilmemiş bir SKU için imageUrl null gelir. Boş bırakmak yerine
+  // her zaman açık bir placeholder gösteriyoruz — sessizce veri
+  // uydurmamak/gizlememek için.
+  function lineThumb(ln) {
+    const boxStyle = 'width:32px;height:32px;border-radius:6px;flex:none;';
+    if (!ln.imageUrl) {
+      return `<div style="${boxStyle}background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;" title="Görsel yok (bu SKU için Trendyol'dan senkronize edilmiş bir ürün görseli bulunamadı)">—</div>`;
+    }
+    return `<img src="${ln.imageUrl}" alt="${(ln.productName || '').replace(/"/g, '&quot;')}" style="${boxStyle}object-fit:cover;border:1px solid var(--border);background:var(--surface-2);" onerror="this.outerHTML='<div style=&quot;${boxStyle}background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;&quot; title=&quot;Görsel yüklenemedi&quot;>—</div>';">`;
+  }
+
   function renderOrderLines(lines) {
     if (!lines || !lines.length) return '<div style="color:var(--text-muted); font-size:12.5px;">Satır detayı yok.</div>';
     return `
       <table>
-        <thead><tr><th>SKU</th><th>Ürün</th><th>Adet</th><th>Birim Fiyat</th><th>Komisyon %</th></tr></thead>
+        <thead><tr><th></th><th>SKU</th><th>Ürün</th><th>Adet</th><th>Birim Fiyat</th><th>Komisyon %</th></tr></thead>
         <tbody>
           ${lines.map(ln => `
             <tr>
+              <td>${lineThumb(ln)}</td>
               <td>${ln.merchantSku || '—'}</td>
               <td>${ln.productName || '—'}</td>
               <td>${ln.quantity ?? '—'}</td>

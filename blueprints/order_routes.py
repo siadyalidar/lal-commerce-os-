@@ -257,7 +257,15 @@ def api_orders():
                 f"""SELECT * FROM order_lines WHERE (marketplace, shipment_package_id) IN ({placeholders})""",
                 flat_params,
             ).fetchall()
+            # Görsel: SADECE Trendyol'dan senkronize ediliyor (bkz.
+            # stock_client.fetch_trendyol_product_images), ama list_product_images()
+            # marketplace ayrımı yapmadan sku bazlı döndüğü için aynı SKU
+            # Hepsiburada'da satılıyorsa da otomatik eşleşir. Görsel hiç
+            # senkronize edilmemişse sessizce None kalır (frontend placeholder
+            # göstermeli — eski/yanlış görsel uydurulmaz).
+            image_map = list_product_images()
             for ln in line_rows:
+                image_url = image_map.get(ln["merchant_sku"]) or image_map.get(ln["barcode"])
                 lines_by_spid[(ln["marketplace"], ln["shipment_package_id"])].append({
                     "barcode": ln["barcode"],
                     "merchantSku": ln["merchant_sku"],
@@ -265,6 +273,7 @@ def api_orders():
                     "quantity": ln["quantity"],
                     "lineUnitPrice": ln["line_unit_price"],
                     "commissionRate": ln["commission_rate"],
+                    "imageUrl": image_url,
                 })
 
     # DÜZELTME (09.08.2026): sipariş bazlı Net Kâr — bkz. _build_order_profit_map
