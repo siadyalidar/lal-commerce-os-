@@ -8,7 +8,7 @@
 
   let currentPage = 1;
   const PAGE_SIZE = 50;
-  const ORDER_COLUMN_COUNT = 9; // ▸, Tarih, Sipariş No, Pazaryeri, Müşteri, Durum, Kargo, Net Tutar, Net Kâr
+  const ORDER_COLUMN_COUNT = 10; // ▸, Görsel, Tarih, Sipariş No, Pazaryeri, Müşteri, Durum, Kargo, Net Tutar, Net Kâr
 
   function marketplaceBadge(marketplace) {
     // Faz 8.4: eskiden burada legacy .mp-badge/.mp-trendyol/.mp-hepsiburada
@@ -56,24 +56,27 @@
   // (/api/orders) aynı görseli otomatik eşleştiriyor; hiç senkron
   // edilmemiş bir SKU için imageUrl null gelir. Boş bırakmak yerine
   // her zaman açık bir placeholder gösteriyoruz — sessizce veri
-  // uydurmamak/gizlememek için.
-  function lineThumb(ln) {
+  // uydurmamak/gizlememek için. Sipariş listesinin ana satırında,
+  // siparişteki ilk görseli bulunan ürün gösterilir (çoğu sipariş tek
+  // kalemli; birden fazla kalem varsa ilk kalemin görseli temsilen kullanılır).
+  function orderThumb(lines) {
     const boxStyle = 'width:32px;height:32px;border-radius:6px;flex:none;';
-    if (!ln.imageUrl) {
+    const withImage = (lines || []).find(ln => ln.imageUrl);
+    if (!withImage) {
       return `<div style="${boxStyle}background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;" title="Görsel yok (bu SKU için Trendyol'dan senkronize edilmiş bir ürün görseli bulunamadı)">—</div>`;
     }
-    return `<img src="${ln.imageUrl}" alt="${(ln.productName || '').replace(/"/g, '&quot;')}" style="${boxStyle}object-fit:cover;border:1px solid var(--border);background:var(--surface-2);" onerror="this.outerHTML='<div style=&quot;${boxStyle}background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;&quot; title=&quot;Görsel yüklenemedi&quot;>—</div>';">`;
+    const alt = (withImage.productName || '').replace(/"/g, '&quot;');
+    return `<img src="${withImage.imageUrl}" alt="${alt}" style="${boxStyle}object-fit:cover;border:1px solid var(--border);background:var(--surface-2);" onerror="this.outerHTML='<div style=&quot;${boxStyle}background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;&quot; title=&quot;Görsel yüklenemedi&quot;>—</div>';">`;
   }
 
   function renderOrderLines(lines) {
     if (!lines || !lines.length) return '<div style="color:var(--text-muted); font-size:12.5px;">Satır detayı yok.</div>';
     return `
       <table>
-        <thead><tr><th></th><th>SKU</th><th>Ürün</th><th>Adet</th><th>Birim Fiyat</th><th>Komisyon %</th></tr></thead>
+        <thead><tr><th>SKU</th><th>Ürün</th><th>Adet</th><th>Birim Fiyat</th><th>Komisyon %</th></tr></thead>
         <tbody>
           ${lines.map(ln => `
             <tr>
-              <td>${lineThumb(ln)}</td>
               <td>${ln.merchantSku || '—'}</td>
               <td>${ln.productName || '—'}</td>
               <td>${ln.quantity ?? '—'}</td>
@@ -95,6 +98,7 @@
     tbody.innerHTML = orders.map((o, i) => `
       <tr class="order-row" data-idx="${i}">
         <td>▸</td>
+        <td>${orderThumb(o.lines)}</td>
         <td>${fmtDateTime(o.orderDate)}</td>
         <td>${o.orderNumber || '—'}</td>
         <td>${marketplaceBadge(o.marketplace)}</td>
@@ -136,7 +140,7 @@
     // gerçek satırların şekline yakın iskelet (skeleton) satırlar koyuyoruz.
     safeDisplay('orders-loading', 'none');
     safeDisplay('orders-table-wrap', 'block');
-    document.getElementById('orders-tbody').innerHTML = skeletonTableRows(ORDER_COLUMN_COUNT, 6, [4, 16, 14, 10, 14, 10, 12, 10, 10]);
+    document.getElementById('orders-tbody').innerHTML = skeletonTableRows(ORDER_COLUMN_COUNT, 6, [4, 6, 16, 14, 10, 14, 10, 12, 10, 10]);
     document.getElementById('pagination').classList.add('is-hidden');
     hideError();
 
