@@ -1173,6 +1173,37 @@ def list_reviews(marketplace="hepsiburada"):
     return [dict(r) for r in rows]
 
 
+def get_known_product_url(sku):
+    """review_contents'te bu sku (product_sku) için daha önce kaydedilmiş
+    GERÇEK bir HB ürün URL'i varsa döner, yoksa None. DEFAULT_REFERER
+    fallback'ine düşmeden önce denenecek ilk kaynak — DEFAULT_REFERER riski
+    çözümü, 23.08.2026 (bkz. hb_review_sync_tasks._resolve_referer).
+    Yeni bir API/keşif YAPMAZ, sadece bu sync sisteminin kendi topladığı
+    veriye bakar."""
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT product_url FROM review_contents
+            WHERE marketplace='hepsiburada' AND product_sku=? AND product_url IS NOT NULL
+            ORDER BY synced_at DESC LIMIT 1
+        """, (sku,)).fetchone()
+    return row["product_url"] if row else None
+
+
+def get_any_known_hb_product_url():
+    """review_contents'te (herhangi bir sku için) kayıtlı GERÇEK bir HB
+    ürün URL'i varsa döner. Faz 0'da farklı sibling sorgularında AYNI
+    Referer'ın başarıyla çalıştığı gözlemlendiği için tam sku eşleşmesi
+    şart değil — herhangi bir gerçek HB ürün sayfası, generic ana sayfadan
+    daha güvenilir bir Referer adayıdır."""
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT product_url FROM review_contents
+            WHERE marketplace='hepsiburada' AND product_url IS NOT NULL
+            ORDER BY synced_at DESC LIMIT 1
+        """).fetchone()
+    return row["product_url"] if row else None
+
+
 def upsert_product_stock_threshold(marketplace, sku, min_stock_threshold):
     with get_connection() as conn:
         conn.execute("""

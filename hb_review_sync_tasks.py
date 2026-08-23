@@ -34,9 +34,42 @@ import logging
 
 import database
 from celery_app import celery_app
-from hb_review_client import fetch_all_reviews_for_sku, normalize_review
+from hb_review_client import DEFAULT_REFERER, fetch_all_reviews_for_sku, normalize_review
 
 logger = logging.getLogger("trendyol_satis")
+
+
+def _resolve_referer(sku):
+    """DEFAULT_REFERER (genel HB ana sayfası) fallback'ine düşmeden önce,
+    mevcut DB'de ZATEN BULUNAN gerçek bir HB ürün URL'ini kullanmayı dener
+    (23.08.2026 DEFAULT_REFERER risk çözümü). Yeni bir API keşfi YAPMAZ --
+    sadece bu sync sisteminin kendi topladığı review_contents verisine bakar.
+
+    Öncelik sırası:
+      1) Bu sku için özel olarak bilinen product_url (get_known_product_url)
+      2) DB'de herhangi bir sku için bilinen gerçek bir HB ürün URL'i
+         (Faz 0: farklı sibling sorgularında AYNI Referer başarıyla
+         çalıştı -- tam eşleşme şart değil, gerçek bir HB ürün sayfası olması
+         yeterli görünüyor)
+      3) DEFAULT_REFERER (genel ana sayfa) -- FALLBACK, açıkça loglanır
+
+    NOT: Taze/boş bir review_contents tablosunda (ilk hiç sync) 1 ve 2 boş
+    döner, kaçınılmaz olarak 3'e (fallback) düşülür -- bu beklenen bir
+    durumdur, sonraki senkronlarda 1/2 devreye girecektir."""
+    known = database.get_known_product_url(sku)
+    if known:
+        return known, "sku-specific"
+
+    any_known = database.get_any_known_hb_product_url()
+    if any_known:
+        return any_known, "any-known"
+
+    logger.warning(
+        f"[HB Review Sync] sku={sku}: DB'de bilinen hiçbir gerçek HB ürün URL'i yok -- "
+        f"FALLBACK Referer kullanılıyor ({DEFAULT_REFERER}). Bu UNVERIFIED bir varsayımdır, "
+        f"sonucun başarılı olup olmadığı izlenmelidir."
+    )
+    return DEFAULT_REFERER, "fallback"
 
 
 def _sync_one_sku(sku, stats):
@@ -44,11 +77,14 @@ def _sync_one_sku(sku, stats):
     review_contents'e upsert eder. Başarısız olursa stats["failed_skus"]'a
     eklenir, exception YUTULMAZ ama task'ın diğer sku'ları işlemesine engel
     olmaz (bkz. Bölüm H: "partial failure isolation")."""
+    referer, referer_source = _resolve_referer(sku)
     try:
-        reviews, family_skus = fetch_all_reviews_for_sku(sku)
+        reviews, family_skus = fetch_all_reviews_for_sku(sku, referer=referer)
     except Exception as exc:
-        logger.warning(f"[HB Review Sync] sku={sku} tamamen başarısız: {exc}")
-        stats["failed_skus"].append({"sku": sku, "error": str(exc)})
+        logger.warning(
+            f"[HB Review Sync] sku={sku} tamamen başarısız (referer_source={referer_source}): {exc}"
+        )
+        stats["failed_skus"].append({"sku": sku, "error": str(exc), "referer_source": referer_source})
         return None
 
     normalized_rows = []

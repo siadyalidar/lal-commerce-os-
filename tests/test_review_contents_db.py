@@ -177,3 +177,31 @@ def test_review_family_map_upsert_updates_existing_barcode(db):
     ])
     fmap = db.get_review_family_map()
     assert fmap == {"BC-A": "BC-A"}  # ikinci satır oluşmadı, güncellendi
+
+
+def test_get_known_product_url_returns_none_when_absent(db):
+    assert db.get_known_product_url("SKU-X") is None
+
+
+def test_get_known_product_url_returns_url_for_matching_sku(db):
+    db.upsert_review_contents([{
+        "external_review_id": "r1", "marketplace": "hepsiburada",
+        "product_sku": "SKU-A", "product_url": "https://www.hepsiburada.com/urun-a",
+        "star": 5, "content": None, "created_at": None,
+        "merchant_id": None, "merchant_name": None,
+        "is_purchase_verified": None, "raw_json": "{}",
+    }])
+    assert db.get_known_product_url("SKU-A") == "https://www.hepsiburada.com/urun-a"
+    assert db.get_known_product_url("SKU-B") is None  # farklı sku, eşleşmemeli
+
+
+def test_get_any_known_hb_product_url_returns_any_real_url(db):
+    assert db.get_any_known_hb_product_url() is None
+    db.upsert_review_contents([{
+        "external_review_id": "r1", "marketplace": "hepsiburada",
+        "product_sku": "SKU-Z", "product_url": "https://www.hepsiburada.com/urun-z",
+        "star": 5, "content": None, "created_at": None,
+        "merchant_id": None, "merchant_name": None,
+        "is_purchase_verified": None, "raw_json": "{}",
+    }])
+    assert db.get_any_known_hb_product_url() == "https://www.hepsiburada.com/urun-z"

@@ -164,3 +164,78 @@ def test_no_hb_barcodes_returns_zero_stats(db):
     assert result["known_representatives_synced"] == 0
     assert result["reviews_upserted"] == 0
     assert result["failed_skus"] == []
+
+
+# ---------------------------------------------------------------
+# DEFAULT_REFERER risk çözümü (23.08.2026): _resolve_referer önceliği
+# ---------------------------------------------------------------
+
+def test_resolve_referer_falls_back_to_default_when_db_empty(db):
+    """Taze/boş review_contents'te bilinen hiçbir URL yok -> fallback."""
+    import hb_review_sync_tasks
+    from hb_review_client import DEFAULT_REFERER
+
+    referer, source = hb_review_sync_tasks._resolve_referer("SKU-NEW")
+    assert referer == DEFAULT_REFERER
+    assert source == "fallback"
+
+
+def test_resolve_referer_prefers_sku_specific_known_url(db):
+    """Bu sku için DB'de bilinen bir product_url varsa, o kullanılmalı."""
+    import hb_review_sync_tasks
+
+    db.upsert_review_contents([{
+        "external_review_id": "rev-1", "marketplace": "hepsiburada",
+        "product_sku": "SKU-A", "product_url": "https://www.hepsiburada.com/gercek-urun-a",
+        "star": 5, "content": None, "created_at": None,
+        "merchant_id": None, "merchant_name": None,
+        "is_purchase_verified": None, "raw_json": "{}",
+    }])
+    referer, source = hb_review_sync_tasks._resolve_referer("SKU-A")
+    assert referer == "https://www.hepsiburada.com/gercek-urun-a"
+    assert source == "sku-specific"
+
+
+def test_resolve_referer_falls_back_to_any_known_url_for_different_sku(db):
+    """Bu sku'ya özel URL yoksa ama DB'de BAŞKA bir sku için gerçek bir URL
+    varsa, o kullanılmalı (Faz 0: farklı sibling sorgularında aynı Referer
+    çalıştı, tam eşleşme şart değil)."""
+    import hb_review_sync_tasks
+
+    db.upsert_review_contents([{
+        "external_review_id": "rev-1", "marketplace": "hepsiburada",
+        "product_sku": "SKU-OTHER", "product_url": "https://www.hepsiburada.com/baska-urun",
+        "star": 5, "content": None, "created_at": None,
+        "merchant_id": None, "merchant_name": None,
+        "is_purchase_verified": None, "raw_json": "{}",
+    }])
+    referer, source = hb_review_sync_tasks._resolve_referer("SKU-NEW-BARCODE")
+    assert referer == "https://www.hepsiburada.com/baska-urun"
+    assert source == "any-known"
+
+
+def test_sync_uses_resolved_referer_not_hardcoded(db):
+    """_sync_one_sku, fetch_all_reviews_for_sku'yu _resolve_referer'ın
+    döndürdüğü referer ile çağırmalı (fallback sabit kodlanmamalı)."""
+    from unittest.mock import patch
+
+    _seed_hb_order_line(db, "BC-A")
+    db.upsert_review_contents([{
+        "external_review_id": "rev-old", "marketplace": "hepsiburada",
+        "product_sku": "SKU-OLD", "product_url": "https://www.hepsiburada.com/onceden-bilinen",
+        "star": 5, "content": None, "created_at": None,
+        "merchant_id": None, "merchant_name": None,
+        "is_purchase_verified": None, "raw_json": "{}",
+    }])
+
+    captured_referers = []
+
+    def fake_fetch(sku, referer=None, **kwargs):
+        captured_referers.append(referer)
+        return [_raw_review("rev-1", "BC-A")], {"BC-A"}
+
+    with patch("hb_review_sync_tasks.fetch_all_reviews_for_sku", side_effect=fake_fetch):
+        import hb_review_sync_tasks
+        hb_review_sync_tasks.sync_hepsiburada_reviews.run()
+
+    assert captured_referers == ["https://www.hepsiburada.com/onceden-bilinen"]
