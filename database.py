@@ -481,6 +481,56 @@ def init_db():
         )
         """)
 
+        # --- Hepsiburada ürün yorumları (review_contents) — 23.08.2026 Faz 0
+        #     denetiminde doğrulanan ApprovedUserContents API'sinden gelir.
+        #     PK (marketplace, external_review_id) — settlements/cargo_costs ile
+        #     AYNI (marketplace, id) bileşik-anahtar deseni: dış kaynaklı ID'yi
+        #     doğrudan PK yapıyoruz, ayrı bir internal UUID tutmuyoruz (bkz.
+        #     HB_Review_Scraper_Audit_Mimari_Raporu.md Bölüm E).
+        #     review.content NULL OLABİLİR (Faz 0: 538 review'ın 335'i null) —
+        #     kolon NOT NULL DEĞİL, "no silent data absence" prensibiyle NULL
+        #     açıkça NULL kalır, boş string'e çevrilmez. ---
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS review_contents (
+            external_review_id TEXT NOT NULL,
+            marketplace TEXT NOT NULL DEFAULT 'hepsiburada',
+            product_sku TEXT,
+            product_url TEXT,
+            star INTEGER,
+            content TEXT,
+            created_at TEXT,
+            merchant_id TEXT,
+            merchant_name TEXT,
+            is_purchase_verified INTEGER,
+            synced_at TEXT DEFAULT (datetime('now', 'localtime')),
+            raw_json TEXT,
+            PRIMARY KEY (marketplace, external_review_id)
+        )
+        """)
+
+        # --- Hepsiburada review "family" keşif eşlemesi — aynı ürünün farklı
+        #     varyant SKU'larının (sibling) AYNI review havuzunu paylaştığı
+        #     Faz 0'da doğrulandı (bkz. rapor Bölüm 3). Her order_lines.barcode
+        #     için API'yi tekrar tekrar sorgulamamak amacıyla, bir barkod bir
+        #     kez sorgulanıp response'taki product.sku seti "aile" olarak
+        #     kaydedilir; ailenin representative_sku'su (deterministik: en
+        #     küçük sku, alfabetik) sonraki senkronlarda TEK başına sorgulanır.
+        #     family_skus: virgülle ayrılmış, debug/izlenebilirlik için (ayrı
+        #     bir review_families/review_family_members join tablosu YERİNE
+        #     tek düz tablo tercih edildi — product_stock/product_images'daki
+        #     "(marketplace, key) PK'li tek tablo" konvansiyonuyla tutarlı,
+        #     projede hiçbir yerde ayrı bir ilişki/join tablosu deseni yok). ---
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS hb_review_family_map (
+            marketplace TEXT NOT NULL DEFAULT 'hepsiburada',
+            barcode TEXT NOT NULL,
+            representative_sku TEXT NOT NULL,
+            family_skus TEXT,
+            discovered_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (marketplace, barcode)
+        )
+        """)
+
         # --- Aylık sabit giderler (kira, personel, muhasebe, vb. — sipariş
         #     bazlı değil, ay bazlı sabit tutarlar). Her kalem ayrı satır;
         #     bir aya ait toplam SUM(amount) WHERE month=? ile hesaplanır. ---
@@ -558,6 +608,8 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_other_financials_marketplace ON other_financials(marketplace)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cargo_costs_marketplace ON cargo_costs(marketplace)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_fixed_expenses_month ON fixed_expenses(month)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_review_contents_product_sku ON review_contents(product_sku)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_review_contents_marketplace ON review_contents(marketplace)")
         conn.commit()
 
 
@@ -1037,6 +1089,88 @@ def list_product_images():
             "SELECT sku, image_url FROM product_images WHERE image_url IS NOT NULL"
         ).fetchall()
     return {r["sku"]: r["image_url"] for r in rows}
+
+
+def list_hb_review_barcodes():
+    """order_lines'daki tüm benzersiz Hepsiburada barcode'larını döner —
+    hb_review_sync_tasks.py'nin tarayacağı barkod listesi budur."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT barcode FROM order_lines
+            WHERE marketplace='hepsiburada' AND barcode IS NOT NULL AND barcode != ''
+        """).fetchall()
+    return [r["barcode"] for r in rows]
+
+
+def get_review_family_map():
+    """{barcode: representative_sku} — daha önce keşfedilmiş aile eşlemesi.
+    Boş dict dönerse hiçbir barkod için discovery henüz yapılmamış demektir."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT barcode, representative_sku FROM hb_review_family_map
+            WHERE marketplace='hepsiburada'
+        """).fetchall()
+    return {r["barcode"]: r["representative_sku"] for r in rows}
+
+
+def upsert_review_family_map(rows):
+    """rows: [{marketplace, barcode, representative_sku, family_skus}].
+    Aynı barcode tekrar geldiğinde representative_sku güncellenir (örn. aile
+    keşfi genişlerse) — INSERT yerine UPSERT."""
+    if not rows:
+        return
+    with get_connection() as conn:
+        conn.executemany("""
+            INSERT INTO hb_review_family_map (marketplace, barcode, representative_sku, family_skus, discovered_at)
+            VALUES (:marketplace, :barcode, :representative_sku, :family_skus, datetime('now', 'localtime'))
+            ON CONFLICT(marketplace, barcode) DO UPDATE SET
+                representative_sku=excluded.representative_sku,
+                family_skus=excluded.family_skus,
+                discovered_at=datetime('now', 'localtime')
+        """, rows)
+
+
+def upsert_review_contents(rows):
+    """rows: [{external_review_id, marketplace, product_sku, product_url, star,
+    content, created_at, merchant_id, merchant_name, is_purchase_verified, raw_json}].
+
+    review_id (external_review_id) CANONICAL PK'dir — aynı review birden fazla
+    sibling SKU sorgusundan veya tekrarlanan bir sync'ten tekrar gelirse
+    (Faz 0'da CONFIRMED: sibling'ler aynı review havuzunu döndürüyor), ikinci
+    bir satır OLUŞMAZ, mevcut satır güncellenir (idempotent UPSERT)."""
+    if not rows:
+        return
+    with get_connection() as conn:
+        conn.executemany("""
+            INSERT INTO review_contents (external_review_id, marketplace, product_sku, product_url,
+                                          star, content, created_at, merchant_id, merchant_name,
+                                          is_purchase_verified, synced_at, raw_json)
+            VALUES (:external_review_id, :marketplace, :product_sku, :product_url,
+                    :star, :content, :created_at, :merchant_id, :merchant_name,
+                    :is_purchase_verified, datetime('now', 'localtime'), :raw_json)
+            ON CONFLICT(marketplace, external_review_id) DO UPDATE SET
+                product_sku=excluded.product_sku,
+                product_url=excluded.product_url,
+                star=excluded.star,
+                content=excluded.content,
+                created_at=excluded.created_at,
+                merchant_id=excluded.merchant_id,
+                merchant_name=excluded.merchant_name,
+                is_purchase_verified=excluded.is_purchase_verified,
+                synced_at=datetime('now', 'localtime'),
+                raw_json=excluded.raw_json
+        """, rows)
+
+
+def list_reviews(marketplace="hepsiburada"):
+    """Panel/rapor geliştirmesi henüz yapılmıyor (bkz. Faz 0 sonrası onay),
+    ama backend'in bu veriyi sorgulayabildiğini doğrulamak ve ileride
+    raporlama için kullanılmak üzere basit bir okuma fonksiyonu."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT * FROM review_contents WHERE marketplace = ? ORDER BY synced_at DESC
+        """, (marketplace,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def upsert_product_stock_threshold(marketplace, sku, min_stock_threshold):

@@ -43,7 +43,10 @@ celery_app = Celery(
     # payout_scrape_tasks.py NOT 2 — Trendyol tarafı kısa ömürlü token
     # nedeniyle otomatik zamanlamaya hâlâ uygun değil, ama HB için artık
     # mümkün).
-    include=["tasks", "payout_scrape_tasks"],
+    # hb_review_sync_tasks: 23.08.2026 eklendi. Beat'e OTOMATİK eklenmedi
+    # (bkz. hb_review_sync_tasks.py docstring'i) -- canlı ortamda küçük bir
+    # örneklemle manuel doğrulama yapılmadan periyodik çalıştırmak riskli.
+    include=["tasks", "payout_scrape_tasks", "hb_review_sync_tasks"],
 )
 
 celery_app.conf.update(
@@ -79,5 +82,15 @@ celery_app.conf.beat_schedule = {
     # "hb-quantity-backfill": {
     #     "task": "tasks.backfill_hb_quantities",
     #     "schedule": 60 * 60 * 6,  # 6 saatte bir, limit=30 (varsayılan)
+    # },
+    #
+    # OPSİYONEL — canlı ortamda en az bir kez manuel tetiklenip (örn. Celery
+    # shell'den `sync_hepsiburada_reviews.delay()`) sonucu doğrulandıktan
+    # SONRA aşağıdaki yorumu kaldırın (bkz. hb_review_sync_tasks.py
+    # docstring'i -- DEFAULT_REFERER varsayımı henüz production'da
+    # doğrulanmadı).
+    # "hb-review-sync": {
+    #     "task": "hb_review_sync_tasks.sync_hepsiburada_reviews",
+    #     "schedule": 60 * 60 * 6,  # 6 saatte bir
     # },
 }
