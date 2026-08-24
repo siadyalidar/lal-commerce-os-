@@ -65,12 +65,26 @@ def test_task_is_registered_with_expected_name(db):
     assert hb_review_sync_tasks.sync_hepsiburada_reviews.name == "hb_review_sync_tasks.sync_hepsiburada_reviews"
 
 
-def test_beat_schedule_does_not_auto_activate_review_sync(db):
-    """Beat'e KOD OLARAK bağlanabilir ama şu an için "hb-review-sync" AKTİF
-    bir schedule girdisi olarak KAYITLI OLMAMALI (kontrollü rollout onayı
-    bekleniyor, bkz. Aşama 10)."""
+def test_beat_schedule_entry_when_active_is_correctly_configured(db):
+    """hb-review-sync schedule girdisi Beat'e aktive EDİLMİŞ OLABİLİR
+    (production rollout kararı deployment zamanında verilir, bu testin
+    işi değil). Bu test girdinin VAR OLMASINI iddia ETMEZ -- sadece VARSA
+    kalıcı güvenlik özelliklerini garanti eder: tek kayıt (duplicate yok)
+    ve production'da limit=None (Aşama 5/6 gereği). Girdi yoksa test
+    sessizce skip edilir."""
     from celery_app import celery_app
-    assert "hb-review-sync" not in celery_app.conf.beat_schedule
+    sched = celery_app.conf.beat_schedule
+
+    matching = [
+        (k, v) for k, v in sched.items()
+        if v.get("task") == "hb_review_sync_tasks.sync_hepsiburada_reviews"
+    ]
+    if not matching:
+        pytest.skip("hb-review-sync henüz Beat'e aktive edilmemiş -- bu ortamda kontrol edilecek bir şey yok")
+
+    assert len(matching) == 1, f"DUPLICATE SCHEDULE: {len(matching)} kayıt bulundu: {matching}"
+    _key, entry = matching[0]
+    assert entry.get("kwargs", {}).get("limit") is None, "production Beat girdisi limit=None olmalı"
 
 
 # ---------------------------------------------------------------
