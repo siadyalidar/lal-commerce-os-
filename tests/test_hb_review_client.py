@@ -57,9 +57,10 @@ def _page(review_ids, next_link=None, total=None):
 @patch("http_client.requests.get")
 def test_single_page_no_next_link(mock_get, mock_sleep_client, mock_sleep_http):
     mock_get.return_value = _resp(200, _page(["r1", "r2"], next_link=None))
-    reviews, family_skus = fetch_all_reviews_for_sku("SKU-1", referer="https://x/")
+    reviews, family_skus, page_count = fetch_all_reviews_for_sku("SKU-1", referer="https://x/")
     assert len(reviews) == 2
     assert mock_get.call_count == 1
+    assert page_count == 1
 
 
 @patch("http_client.time.sleep", return_value=None)
@@ -71,9 +72,10 @@ def test_multi_page_follows_links_next_until_none(mock_get, mock_sleep_client, m
         _resp(200, _page(["r3", "r4"], next_link="/next?from=4")),
         _resp(200, _page(["r5"], next_link=None)),
     ]
-    reviews, family_skus = fetch_all_reviews_for_sku("SKU-1", referer="https://x/", size=2)
+    reviews, family_skus, page_count = fetch_all_reviews_for_sku("SKU-1", referer="https://x/", size=2)
     assert len(reviews) == 5
     assert mock_get.call_count == 3
+    assert page_count == 3
     ids = [r["id"] for r in reviews]
     assert ids == ["r1", "r2", "r3", "r4", "r5"]
 
@@ -85,7 +87,7 @@ def test_empty_page_stops_pagination(mock_get, mock_sleep_client, mock_sleep_htt
     mock_get.side_effect = [
         _resp(200, _page([], next_link="/next?from=0")),
     ]
-    reviews, family_skus = fetch_all_reviews_for_sku("SKU-1", referer="https://x/")
+    reviews, family_skus, page_count = fetch_all_reviews_for_sku("SKU-1", referer="https://x/")
     assert reviews == []
     assert mock_get.call_count == 1
 
@@ -100,7 +102,7 @@ def test_empty_page_stops_pagination(mock_get, mock_sleep_client, mock_sleep_htt
 def test_family_skus_discovered_from_response(mock_get, mock_sleep_client, mock_sleep_http):
     """Response'taki product.sku'lardan aile üyeleri çıkarılmalı."""
     mock_get.return_value = _resp(200, _page(["r1", "r2", "r3"], next_link=None))
-    reviews, family_skus = fetch_all_reviews_for_sku("SKU-1", referer="https://x/")
+    reviews, family_skus, page_count = fetch_all_reviews_for_sku("SKU-1", referer="https://x/")
     # _page() her review'a farklı SIB-0/SIB-1/SIB-2 atıyor
     assert family_skus == {"SIB-0", "SIB-1", "SIB-2"}
 
@@ -129,8 +131,9 @@ def test_later_page_failure_returns_partial_results(mock_get, mock_sleep_client,
         _resp(200, _page(["r1", "r2"], next_link="/next?from=2")),
         _resp(500, text="Internal Server Error"),
     ]
-    reviews, family_skus = fetch_all_reviews_for_sku("SKU-1", referer="https://x/", size=2)
+    reviews, family_skus, page_count = fetch_all_reviews_for_sku("SKU-1", referer="https://x/", size=2)
     assert len(reviews) == 2  # ilk sayfa korunmuş
+    assert page_count == 1  # sadece basarili sayfa sayildi
     ids = [r["id"] for r in reviews]
     assert ids == ["r1", "r2"]
 

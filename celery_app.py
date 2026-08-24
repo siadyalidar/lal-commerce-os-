@@ -84,13 +84,17 @@ celery_app.conf.beat_schedule = {
     #     "schedule": 60 * 60 * 6,  # 6 saatte bir, limit=30 (varsayılan)
     # },
     #
-    # OPSİYONEL — canlı ortamda en az bir kez manuel tetiklenip (örn. Celery
-    # shell'den `sync_hepsiburada_reviews.delay()`) sonucu doğrulandıktan
-    # SONRA aşağıdaki yorumu kaldırın (bkz. hb_review_sync_tasks.py
-    # docstring'i -- DEFAULT_REFERER varsayımı henüz production'da
-    # doğrulanmadı).
+    # OPSİYONEL — DEFAULT_REFERER varsayımı 24.08.2026'da canlı ortamda
+    # doğrulandı (bkz. Faz1 Manuel Doğrulama Raporu). Ancak tüm katalog
+    # için Beat'e bağlamadan önce, önce kontrollü bir ilk rollout
+    # (sync_hepsiburada_reviews.delay(limit=5) gibi küçük bir limit'le)
+    # manuel tetiklenip sonucu doğrulanmalı -- SONRA aşağıdaki yorumu
+    # kaldırın. "nightly-reconciliation-sync" (03:00) ile çakışmasın diye
+    # 04:00 seçildi; review içeriği sipariş verisi kadar zaman-kritik
+    # olmadığı için günde bir kez yeterli görülüyor.
     # "hb-review-sync": {
     #     "task": "hb_review_sync_tasks.sync_hepsiburada_reviews",
-    #     "schedule": 60 * 60 * 6,  # 6 saatte bir
+    #     "schedule": crontab(hour=4, minute=0),  # her gece 04:00 (Europe/Istanbul)
+    #     "kwargs": {"limit": None},  # kontrollü ilk rollout sonrası sınırsız
     # },
 }

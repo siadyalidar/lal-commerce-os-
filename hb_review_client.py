@@ -126,10 +126,18 @@ def fetch_all_reviews_for_sku(
     kadar). createdAt/totalItemCount'a dayanarak HİÇBİR ZAMAN erken durmaz
     (bkz. modül docstring'indeki UNVERIFIED sort-order notu).
 
-    Döner: (all_reviews: list[dict], family_skus: set[str])
+    Döner: (all_reviews: list[dict], family_skus: set[str], page_count: int)
       all_reviews: HB'den gelen ham review nesnelerinin tam listesi
       family_skus: response'larda görülen tüm product.sku değerleri (sibling
         ailesinin keşfi için — Faz 0 Bölüm F/discovery mantığı)
+      page_count: başarıyla çekilen sayfa sayısı (production logging/
+        "total API requests" özeti için — bkz. hb_review_sync_tasks.py
+        Aşama 7). Yalnızca BAŞARILI sayfaları sayar; bir sku'nun ilk sayfası
+        bile alınamazsa exception fırlatılır ve page_count hiç dönmez —
+        bu durumda çağıran taraf o isteği ayrıca 1 olarak saymalı (bkz.
+        hb_review_sync_tasks.py'deki not) -- bu yüzden page_count TOPLAM
+        API isteği sayısının kesin değil, alt sınır (en az bu kadar) bir
+        tahminidir.
 
     İlk sayfa bile alınamazsa exception YUKARI FIRLATILIR (bu sku için sync
     tamamen başarısız sayılmalı, sessizce boş liste dönülmez). Sonraki bir
@@ -138,6 +146,7 @@ def fetch_all_reviews_for_sku(
     all_reviews = []
     family_skus = set()
     from_ = 0
+    page_count = 0
 
     for page_num in range(max_pages):
         try:
@@ -151,6 +160,7 @@ def fetch_all_reviews_for_sku(
             )
             break
 
+        page_count += 1
         review_list = (
             (data.get("data") or {})
             .get("approvedUserContent", {})
@@ -170,7 +180,7 @@ def fetch_all_reviews_for_sku(
         if sleep_seconds:
             time.sleep(sleep_seconds)
 
-    return all_reviews, family_skus
+    return all_reviews, family_skus, page_count
 
 
 def normalize_review(raw, marketplace="hepsiburada"):

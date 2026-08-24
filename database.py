@@ -1204,6 +1204,25 @@ def get_any_known_hb_product_url():
     return row["product_url"] if row else None
 
 
+def get_existing_review_ids(external_review_ids, marketplace="hepsiburada"):
+    """Verilen id listesinden HANGİLERİ review_contents'te ZATEN mevcut,
+    onları set olarak döner. upsert'ten ÖNCE çağrılmalı -- production
+    logging'de "inserted" (yeni) vs "updated" (zaten vardı) review
+    sayısını ayırt etmek için kullanılır (bkz. hb_review_sync_tasks.py
+    Aşama 7)."""
+    external_review_ids = [i for i in external_review_ids if i]
+    if not external_review_ids:
+        return set()
+    with get_connection() as conn:
+        placeholders = ",".join("?" for _ in external_review_ids)
+        rows = conn.execute(
+            f"""SELECT external_review_id FROM review_contents
+                WHERE marketplace=? AND external_review_id IN ({placeholders})""",
+            [marketplace, *external_review_ids],
+        ).fetchall()
+    return {r["external_review_id"] for r in rows}
+
+
 def upsert_product_stock_threshold(marketplace, sku, min_stock_threshold):
     with get_connection() as conn:
         conn.execute("""
