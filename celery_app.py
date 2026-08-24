@@ -92,9 +92,9 @@ celery_app.conf.beat_schedule = {
     # kaldırın. "nightly-reconciliation-sync" (03:00) ile çakışmasın diye
     # 04:00 seçildi; review içeriği sipariş verisi kadar zaman-kritik
     # olmadığı için günde bir kez yeterli görülüyor.
-    # "hb-review-sync": {
-    #     "task": "hb_review_sync_tasks.sync_hepsiburada_reviews",
-    #     "schedule": crontab(hour=4, minute=0),  # her gece 04:00 (Europe/Istanbul)
-    #     "kwargs": {"limit": None},  # kontrollü ilk rollout sonrası sınırsız
-    # },
+    "hb-review-sync": {
+        "task": "hb_review_sync_tasks.sync_hepsiburada_reviews",
+        "schedule": crontab(hour=4, minute=0),  # her gece 04:00 (Europe/Istanbul)
+        "kwargs": {"limit": None},
+    },
 }
