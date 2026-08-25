@@ -75,6 +75,9 @@ app.register_blueprint(finance_routes_bp)
 
 from blueprints.reports_routes import bp as reports_routes_bp  # noqa: E402
 app.register_blueprint(reports_routes_bp)
+
+from blueprints.reviews_routes import bp as reviews_routes_bp  # noqa: E402
+app.register_blueprint(reviews_routes_bp)
 app.register_blueprint(growth_routes_bp)
 
 # ============================================================

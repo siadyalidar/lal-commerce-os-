@@ -1,0 +1,27 @@
+/* Yorumlar paneli — reports.css'teki .reports-kpis deseniyle tutarlı */
+.reviews-kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--lal-space-3); margin-bottom:var(--lal-space-4); }
+
+.reviews-distribution { display:grid; gap:var(--lal-space-2); }
+.reviews-distribution-row { display:grid; grid-template-columns:60px 1fr 40px; align-items:center; gap:var(--lal-space-3); }
+.reviews-distribution-row .stars-label { color:var(--lal-text-muted); font-size:.85rem; }
+.reviews-distribution-bar-track { background:var(--lal-border-soft); border-radius:var(--lal-radius-sm); height:8px; overflow:hidden; }
+.reviews-distribution-bar-fill { background:var(--lal-accent); height:100%; border-radius:var(--lal-radius-sm); }
+.reviews-distribution-row .count { color:var(--lal-text-muted); font-family:var(--lal-font-mono); font-size:.82rem; text-align:right; }
+
+.reviews-today-panel { border-color: var(--lal-accent); }
+
+.reviews-list { display:grid; gap:var(--lal-space-3); max-height: 640px; overflow-y: auto; }
+.review-card { background:var(--lal-surface); border:1px solid var(--lal-border); border-radius:var(--lal-radius-lg); padding:var(--lal-space-4); }
+.review-card-header { align-items:center; display:flex; gap:var(--lal-space-3); justify-content:space-between; margin-bottom:var(--lal-space-2); }
+.review-card-stars { color: #f5a623; font-size: 1rem; letter-spacing: 2px; }
+.review-card-stars .star-empty { color: var(--lal-border); }
+.review-card-meta { align-items:center; display:flex; gap:var(--lal-space-2); }
+.review-card-date { color:var(--lal-text-muted); font-family:var(--lal-font-mono); font-size:.78rem; }
+.review-card-new-badge { background:var(--lal-accent); border-radius:999px; color:#fff; font-size:.68rem; font-weight:600; padding:2px 8px; text-transform:uppercase; letter-spacing:.04em; }
+.review-card-verified-badge { background:var(--lal-border-soft); border-radius:999px; color:var(--lal-text-muted); font-size:.68rem; padding:2px 8px; }
+.review-card-content { color:var(--lal-text-main); font-size:.9rem; line-height:1.5; }
+.review-card-content.is-empty { color:var(--lal-text-muted); font-style:italic; }
+.review-card-sku { color:var(--lal-text-muted); font-family:var(--lal-font-mono); font-size:.76rem; margin-top:var(--lal-space-2); }
+
+@media (max-width: 900px) { .reviews-kpis { grid-template-columns:1fr 1fr; } }
+@media (max-width: 560px) { .reviews-kpis { grid-template-columns:1fr; } }

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Yorumlar — LAL{% endblock %}
+{% block page_title %}Yorumlar{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/reviews.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="lal-page-intro">
+  <p>Müşteri geri bildirimi</p>
+  <h1>Hepsiburada yorumlarını <strong>tek ekranda gör.</strong></h1>
+  <span>Her gece 04:00'te otomatik senkronize edilir. Yeni gelen yorumlar aşağıda ayrıca vurgulanır.</span>
+</section>
+
+<div id="reviews-loading" class="loading">Yorumlar hazırlanıyor…</div>
+<div id="reviews-content" class="is-hidden">
+  <section class="reviews-kpis">
+    <div class="report-kpi"><span>Ortalama Puan</span><strong id="review-avg-star">–</strong></div>
+    <div class="report-kpi"><span>Toplam Yorum</span><strong id="review-total-count">–</strong></div>
+    <div class="report-kpi"><span>Bugün Eklenen</span><strong id="review-today-count">–</strong></div>
+  </section>
+
+  <section class="panel reviews-distribution-panel">
+    <h2>Puan Dağılımı</h2>
+    <div id="review-distribution" class="reviews-distribution"></div>
+  </section>
+
+  <section class="panel reviews-today-panel" id="reviews-today-panel">
+    <div class="panel-header-row">
+      <div><h2>Bugün Eklenen Değerlendirmeler</h2><p class="panel-note">Sadece bugün ilk kez keşfedilen yeni yorumlar — her gece tekrar senkronize edilen eski yorumlar burada TEKRAR görünmez.</p></div>
+    </div>
+    <div id="reviews-today-list" class="reviews-list"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header-row">
+      <div><h2>Tüm Yorumlar</h2><p class="panel-note">Yorum tarihine göre en yeniden eskiye sıralı.</p></div>
+    </div>
+    <div id="reviews-all-list" class="reviews-list"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/yorumlar.js') }}"></script>
+{% endblock %}

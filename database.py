@@ -300,10 +300,28 @@ def _migrate_supplier_debt_v2(conn):
             """, (t["id"], -round(bakiye, 2), "Gecmis borc sifirlama (11.08.2026) - 03.08.2026 oncesi odendi"))
 
 
+def _migrate_review_first_synced_at(conn):
+    """review_contents'e first_synced_at kolonu ekler (24.08.2026).
+
+    Mevcut synced_at kolonu HER upsert'te güncelleniyor (Faz 2 her gece
+    ailenin tüm review'larını yeniden çekip upsert ediyor) -- bu yüzden
+    "bugün gerçekten yeni keşfedilen review" ile "bugün sadece tekrar
+    görülen eski review" ayırt edilemiyor. first_synced_at SADECE ilk
+    INSERT'te yazılır, sonraki upsert'lerde DOKUNULMAZ (bkz.
+    upsert_review_contents) -- "Bugün Eklenen Değerlendirmeler" widget'ı
+    bu kolona dayanır."""
+    _ensure_column(conn, "review_contents", "first_synced_at", "TEXT")
+    # Mevcut satırlar için (migration öncesi eklenmiş review'lar)
+    # first_synced_at NULL kalır -- bu, "ne zaman ilk keşfedildiği
+    # bilinmiyor" anlamına gelir (veri uydurulmaz), "bugün eklendi"
+    # listesine hiç girmezler (doğru davranış, gerçekten bugün eklenmediler).
+
+
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
     ("2026_08_09_growth_columns", _migrate_growth_columns),
     ("2026_08_11_supplier_debt_v2", _migrate_supplier_debt_v2),
+    ("2026_08_24_review_first_synced_at", _migrate_review_first_synced_at),
 ]
 
 def init_db():
@@ -1137,17 +1155,24 @@ def upsert_review_contents(rows):
     review_id (external_review_id) CANONICAL PK'dir — aynı review birden fazla
     sibling SKU sorgusundan veya tekrarlanan bir sync'ten tekrar gelirse
     (Faz 0'da CONFIRMED: sibling'ler aynı review havuzunu döndürüyor), ikinci
-    bir satır OLUŞMAZ, mevcut satır güncellenir (idempotent UPSERT)."""
+    bir satır OLUŞMAZ, mevcut satır güncellenir (idempotent UPSERT).
+
+    first_synced_at SADECE ilk INSERT'te yazılır -- ON CONFLICT DO UPDATE
+    bu kolona DOKUNMAZ, orijinal değeri korunur (24.08.2026, bkz.
+    _migrate_review_first_synced_at). Bu sayede "bugün gerçekten yeni
+    keşfedilen review" ile "bugün sadece tekrar senkronize edilen eski
+    review" ayırt edilebiliyor -- synced_at her upsert'te güncellenir,
+    first_synced_at güncellenmez."""
     if not rows:
         return
     with get_connection() as conn:
         conn.executemany("""
             INSERT INTO review_contents (external_review_id, marketplace, product_sku, product_url,
                                           star, content, created_at, merchant_id, merchant_name,
-                                          is_purchase_verified, synced_at, raw_json)
+                                          is_purchase_verified, synced_at, first_synced_at, raw_json)
             VALUES (:external_review_id, :marketplace, :product_sku, :product_url,
                     :star, :content, :created_at, :merchant_id, :merchant_name,
-                    :is_purchase_verified, datetime('now', 'localtime'), :raw_json)
+                    :is_purchase_verified, datetime('now', 'localtime'), datetime('now', 'localtime'), :raw_json)
             ON CONFLICT(marketplace, external_review_id) DO UPDATE SET
                 product_sku=excluded.product_sku,
                 product_url=excluded.product_url,
@@ -1171,6 +1196,65 @@ def list_reviews(marketplace="hepsiburada"):
             SELECT * FROM review_contents WHERE marketplace = ? ORDER BY synced_at DESC
         """, (marketplace,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_reviews_sorted_by_date(marketplace="hepsiburada", limit=200):
+    """Yorumlar panelindeki ana liste için — gerçek review tarihine
+    (created_at, HB'deki oluşturulma tarihi) göre en yeniden eskiye
+    sıralı. Faz 0 CONFIRMED bulgusuyla ilgisi yok -- bu SADECE görüntüleme
+    sıralaması, sync sırasında early-stop/cursor mantığı İÇİN
+    KULLANILMIYOR (o mantık hâlâ pagination'ı tam tüketiyor, bkz.
+    hb_review_sync_tasks.py)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT * FROM review_contents WHERE marketplace = ?
+            ORDER BY created_at DESC LIMIT ?
+        """, (marketplace, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_reviews_today(marketplace="hepsiburada"):
+    """Bugün GERÇEKTEN İLK KEZ keşfedilen review'lar (first_synced_at bazlı,
+    synced_at DEĞİL -- bkz. upsert_review_contents docstring'i). Bir
+    review'ın her gece tekrar senkronize edilmesi (Faz 2, temsilci sku
+    sorgusu) onu 'bugün eklendi' listesine SOKMAZ, sadece gerçekten yeni
+    keşfedilenler girer."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT * FROM review_contents
+            WHERE marketplace = ? AND date(first_synced_at) = date('now', 'localtime')
+            ORDER BY first_synced_at DESC
+        """, (marketplace,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_review_stats(marketplace="hepsiburada"):
+    """Ortalama puan + yıldız dağılımı + toplam review sayısı. star NULL
+    olan satırlar (Faz 0: nadir ama mümkün) ortalamaya dahil edilmez."""
+    with get_connection() as conn:
+        total_row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM review_contents WHERE marketplace = ?", (marketplace,)
+        ).fetchone()
+        avg_row = conn.execute(
+            "SELECT AVG(star) as avg_star FROM review_contents WHERE marketplace = ? AND star IS NOT NULL",
+            (marketplace,),
+        ).fetchone()
+        dist_rows = conn.execute("""
+            SELECT star, COUNT(*) as cnt FROM review_contents
+            WHERE marketplace = ? AND star IS NOT NULL
+            GROUP BY star
+        """, (marketplace,)).fetchall()
+
+    distribution = {str(i): 0 for i in range(1, 6)}
+    for row in dist_rows:
+        if row["star"] is not None and 1 <= row["star"] <= 5:
+            distribution[str(row["star"])] = row["cnt"]
+
+    return {
+        "totalCount": total_row["cnt"] or 0,
+        "avgStar": round(avg_row["avg_star"], 2) if avg_row["avg_star"] is not None else None,
+        "distribution": distribution,
+    }
 
 
 def get_known_product_url(sku):
