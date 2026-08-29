@@ -499,6 +499,73 @@ def init_db():
         )
         """)
 
+        # --- Müşteri Soruları AI Asistanı — 29.08.2026 Faz 0 denetiminde
+        #     onaylanan mimari. Üç tablo:
+        #
+        #     customer_questions: Trendyol/HB'den çekilen sorular.
+        #     (marketplace, question_id) composite PK — settlements/
+        #     cargo_costs/review_contents ile AYNI marketplace-namespaced
+        #     desen. question_id dış kaynaklı ID (Trendyol: questions.id,
+        #     HB: number) doğrudan PK'nin parçası, ayrı internal UUID yok.
+        #
+        #     question_draft_answers: AI'nin ürettiği taslak, 1-1
+        #     customer_questions ile eşleşir (aynı composite PK). Draft-only
+        #     mimari (29.08.2026 kararı): sent=0 iken taslak sadece panelde
+        #     gösterilir, hiçbir yerden otomatik Trendyol/HB'ye POST edilmez;
+        #     Sidar panelden manuel onaylayıp gönderdiğinde sent=1 olur.
+        #
+        #     product_knowledge_facts: sku bazlı (marketplace'ten bağımsız —
+        #     product_images ile AYNI sku kavramı), Sidar'ın bir kere
+        #     cevapladığı netleştirme sorularının kalıcı olarak biriktiği
+        #     bilgi tabanı. AI, draft üretirken SADECE bu tablodaki fact'lere
+        #     dayanır (grounding) — dışına çıkarsa NEEDS_CLARIFICATION döner
+        #     (bkz. qna_ai_engine.py, 29.08.2026 ampirik testi: gemma4:e4b
+        #     ile halüsinasyon YOK, doğru şekilde clarification istiyor). ---
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS customer_questions (
+            marketplace TEXT NOT NULL,
+            question_id TEXT NOT NULL,
+            sku TEXT,
+            question_text TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source_created_at TEXT,
+            synced_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (marketplace, question_id)
+        )
+        """)
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS question_draft_answers (
+            marketplace TEXT NOT NULL,
+            question_id TEXT NOT NULL,
+            draft_text TEXT,
+            needs_clarification INTEGER NOT NULL DEFAULT 0,
+            clarification_prompt TEXT,
+            model_used TEXT,
+            generated_at TEXT DEFAULT (datetime('now', 'localtime')),
+            sent INTEGER NOT NULL DEFAULT 0,
+            sent_at TEXT,
+            PRIMARY KEY (marketplace, question_id),
+            FOREIGN KEY (marketplace, question_id)
+                REFERENCES customer_questions (marketplace, question_id)
+        )
+        """)
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS product_knowledge_facts (
+            fact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            fact_text TEXT NOT NULL,
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+        )
+        """)
+        c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_product_knowledge_facts_sku
+            ON product_knowledge_facts (sku)
+        """)
+
         # --- Hepsiburada ürün yorumları (review_contents) — 23.08.2026 Faz 0
         #     denetiminde doğrulanan ApprovedUserContents API'sinden gelir.
         #     PK (marketplace, external_review_id) — settlements/cargo_costs ile
@@ -1461,6 +1528,119 @@ def get_sync_progress(marketplace="trendyol"):
             "status": "idle", "current_step": 0, "total_steps": 0,
             "message": None, "error": None, "started_at": None, "updated_at": None,
         }
+
+
+# ============================================================
+# Müşteri Soruları AI Asistanı (29.08.2026 Faz 0 kararı)
+# ============================================================
+
+def upsert_customer_questions(rows):
+    """rows: [{marketplace, question_id, sku, question_text, status,
+    source_created_at}] — trendyol_qna_client.fetch_questions'tan gelir.
+    (marketplace, question_id) composite PK üzerinden idempotent upsert;
+    status güncellenmesi (örn. WAITING_FOR_ANSWER -> ANSWERED) mevcut
+    satırı günceller, yeni satır oluşturmaz."""
+    if not rows:
+        return
+    with get_connection() as conn:
+        conn.executemany("""
+            INSERT INTO customer_questions
+                (marketplace, question_id, sku, question_text, status, source_created_at, synced_at)
+            VALUES (:marketplace, :question_id, :sku, :question_text, :status, :source_created_at,
+                    datetime('now', 'localtime'))
+            ON CONFLICT(marketplace, question_id) DO UPDATE SET
+                sku=excluded.sku,
+                question_text=excluded.question_text,
+                status=excluded.status,
+                source_created_at=excluded.source_created_at,
+                synced_at=datetime('now', 'localtime')
+        """, rows)
+
+
+def list_customer_questions(marketplace=None, status=None):
+    """marketplace/status verilmezse filtre uygulanmaz (tümü döner)."""
+    query = "SELECT * FROM customer_questions WHERE 1=1"
+    params = []
+    if marketplace:
+        query += " AND marketplace = ?"
+        params.append(marketplace)
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY source_created_at DESC"
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_draft_answer(marketplace, question_id, draft_text, needs_clarification,
+                         clarification_prompt, model_used):
+    """(marketplace, question_id) başına tek taslak tutulur -- yeniden
+    üretim (örn. yeni bir product_knowledge_fact eklendiğinde) eski
+    taslağın üzerine yazar. sent alanı burada asla değiştirilmez (ayrı
+    bir onay/gönderim adımı -- bkz. mark_draft_answer_sent)."""
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO question_draft_answers
+                (marketplace, question_id, draft_text, needs_clarification,
+                 clarification_prompt, model_used, generated_at, sent)
+            VALUES (:marketplace, :question_id, :draft_text, :needs_clarification,
+                    :clarification_prompt, :model_used, datetime('now', 'localtime'), 0)
+            ON CONFLICT(marketplace, question_id) DO UPDATE SET
+                draft_text=excluded.draft_text,
+                needs_clarification=excluded.needs_clarification,
+                clarification_prompt=excluded.clarification_prompt,
+                model_used=excluded.model_used,
+                generated_at=datetime('now', 'localtime')
+        """, {
+            "marketplace": marketplace,
+            "question_id": question_id,
+            "draft_text": draft_text,
+            "needs_clarification": 1 if needs_clarification else 0,
+            "clarification_prompt": clarification_prompt,
+            "model_used": model_used,
+        })
+
+
+def get_draft_answer(marketplace, question_id):
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT * FROM question_draft_answers WHERE marketplace = ? AND question_id = ?
+        """, (marketplace, question_id)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result["needs_clarification"] = bool(result["needs_clarification"])
+    result["sent"] = bool(result["sent"])
+    return result
+
+
+def mark_draft_answer_sent(marketplace, question_id):
+    """Sidar panelden taslağı manuel onaylayıp gönderdiğinde çağrılır.
+    Bu fonksiyon HİÇBİR ZAMAN Trendyol/HB'ye otomatik POST atmaz -- sadece
+    yerel kaydı işaretler (gönderim ayrı, açık bir adımdır)."""
+    with get_connection() as conn:
+        conn.execute("""
+            UPDATE question_draft_answers
+            SET sent = 1, sent_at = datetime('now', 'localtime')
+            WHERE marketplace = ? AND question_id = ?
+        """, (marketplace, question_id))
+
+
+def add_product_knowledge_fact(sku, topic, fact_text, created_by):
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO product_knowledge_facts (sku, topic, fact_text, created_by, created_at)
+            VALUES (?, ?, ?, ?, datetime('now', 'localtime'))
+        """, (sku, topic, fact_text, created_by))
+
+
+def list_product_knowledge_facts(sku):
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT * FROM product_knowledge_facts WHERE sku = ? ORDER BY created_at ASC
+        """, (sku,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 if __name__ == "__main__":
