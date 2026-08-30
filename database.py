@@ -1557,8 +1557,8 @@ def upsert_customer_questions(rows):
         """, rows)
 
 
-def list_customer_questions(marketplace=None, status=None):
-    """marketplace/status verilmezse filtre uygulanmaz (tümü döner)."""
+def list_customer_questions(marketplace=None, status=None, sku=None):
+    """marketplace/status/sku verilmezse filtre uygulanmaz (tümü döner)."""
     query = "SELECT * FROM customer_questions WHERE 1=1"
     params = []
     if marketplace:
@@ -1567,6 +1567,9 @@ def list_customer_questions(marketplace=None, status=None):
     if status:
         query += " AND status = ?"
         params.append(status)
+    if sku:
+        query += " AND sku = ?"
+        params.append(sku)
     query += " ORDER BY source_created_at DESC"
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
