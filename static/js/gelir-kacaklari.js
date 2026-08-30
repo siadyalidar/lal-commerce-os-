@@ -1,6 +1,5 @@
 (function () {
   if (!document.getElementById('questions-list')) return;
-  const esc = value => String(value == null ? '' : value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const days = () => document.getElementById('growth-days').value;
   const error = message => { const el = document.getElementById('growth-error'); el.textContent = message; el.style.display = 'block'; };
   const clearError = () => document.getElementById('growth-error').style.display = 'none';
@@ -9,7 +8,7 @@
     clearError(); const btn = document.getElementById('questions-sync'); btn.disabled = true; btn.textContent = 'Getiriliyor…';
     try { const data = await json('/api/growth/questions/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({days:Number(days())})});
       document.getElementById('questions-kpi').textContent = fmtNum(data.total);
-      document.getElementById('questions-list').innerHTML = data.items.length ? data.items.map(q => `<article class="growth-item"><div><strong>${esc(q.productName || 'Ürün')}</strong><p>${esc(q.text)}</p><small>${esc(q.action)}</small></div><button class="lal-btn lal-btn-ghost question-answer" data-id="${q.id}" data-question="${esc(q.text)}">Yanıtla</button></article>`).join('') : 'Bekleyen soru yok.';
+      document.getElementById('questions-list').innerHTML = data.items.length ? data.items.map(q => `<article class="growth-item"><div><strong>${esc(q.productName || 'Ürün')}</strong><p>${esc(q.text)}</p><small>${esc(q.action)}</small></div><button class="lal-btn lal-btn-ghost question-answer" data-id="${esc(q.id)}" data-question="${esc(q.text)}">Yanıtla</button></article>`).join('') : 'Bekleyen soru yok.';
       document.querySelectorAll('.question-answer').forEach(button => button.addEventListener('click', () => answer(button)));
     } catch (e) { error(e.message); } finally { btn.disabled = false; btn.textContent = 'Soruları getir'; }
   }

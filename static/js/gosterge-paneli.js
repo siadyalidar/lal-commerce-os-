@@ -7,7 +7,25 @@
   // ---------- KPI'lar + Sipariş Satırı Detayı ----------
   let firstLoadDone = false;
   let linesCache = [];
+  let refreshGeneration = 0;
+  const requestControllers = {};
   const LINES_THEAD_STANDARD = '<th>Tarih</th><th>Sipariş No</th><th>SKU</th><th>Ürün</th><th>Adet</th><th>Ciro</th><th>Komisyon</th><th>Hizmet Bedeli</th><th>Net Hakediş</th><th>Kargo</th><th>Maliyet</th><th>Kâr</th><th>Durum</th>';
+
+  function startRequest(name) {
+    if (requestControllers[name]) requestControllers[name].abort();
+    const controller = new AbortController();
+    requestControllers[name] = controller;
+    return controller;
+  }
+
+  function isCurrentRequest(name, controller, generation) {
+    return requestControllers[name] === controller && !controller.signal.aborted && generation === refreshGeneration;
+  }
+
+  function setVisible(id, visible) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('is-hidden', !visible);
+  }
 
   function renderProfitSummary(t) {
     document.getElementById('stat-gross-revenue').textContent = fmtTL(t.gross_revenue);
@@ -43,9 +61,9 @@
       return `
         <tr>
           <td>${l.orderDate ? new Date(l.orderDate).toLocaleDateString('tr-TR') : '—'}</td>
-          <td>${l.orderNumber || ''}</td>
-          <td>${l.sku || '–'}</td>
-          <td>${l.productName || ''}</td>
+          <td>${esc(l.orderNumber || '')}</td>
+          <td>${esc(l.sku || '–')}</td>
+          <td>${esc(l.productName || '')}</td>
           <td>${fmtNum(l.quantity)}</td>
           <td>${fmtTL(l.grossRevenue)}</td>
           <td>${fmtTL(l.commission)}</td>
@@ -71,44 +89,51 @@
     applyLinesFilter();
   }
 
-  async function loadSummary() {
-    if (!firstLoadDone) { safeDisplay('summary-loading', 'block'); safeDisplay('summary-content', 'none'); }
+  async function loadSummary(generation = refreshGeneration) {
+    const controller = startRequest('summary');
+    if (!firstLoadDone) { setVisible('summary-loading', true); setVisible('summary-content', false); }
     hideError();
+    void loadTodayOrderCount(generation);
     try {
       const rangeParam = rangeQueryParam();
       const [summaryRes, orderCountRes] = await Promise.all([
-        fetch(`/api/dashboard-summary?${rangeParam}`),
-        fetch(`/api/orders?${rangeParam}&page=1&page_size=1`),
+        fetch(`/api/dashboard-summary?${rangeParam}`, { signal: controller.signal }),
+        fetch(`/api/orders?${rangeParam}&page=1&page_size=1`, { signal: controller.signal }),
       ]);
       const summary = await summaryRes.json();
+      if (!isCurrentRequest('summary', controller, generation)) return;
       try {
         const orderCountData = await orderCountRes.json();
+        if (!isCurrentRequest('summary', controller, generation)) return;
         safeText('stat-orders', orderCountData.error ? '—' : fmtNum(orderCountData.total));
-      } catch (e) { safeText('stat-orders', '—'); }
-
-      if (summary.error) { showError(summary.error); safeDisplay('summary-loading', 'none'); return; }
-
+      } catch (e) {
+        if (isCurrentRequest('summary', controller, generation)) safeText('stat-orders', '—');
+      }
+      if (summary.error) { showError(summary.error); setVisible('summary-loading', false); return; }
       renderProfitSummary(summary.totals);
       renderLines(summary.lines || summary.orders || []);
-      loadMonthlyProfitChart();
-
-      safeDisplay('summary-loading', 'none');
-      safeDisplay('summary-content', 'block');
+      loadMonthlyProfitChart(generation);
+      setVisible('summary-loading', false);
+      setVisible('summary-content', true);
       firstLoadDone = true;
     } catch (e) {
-      safeDisplay('summary-loading', 'none');
+      if (!isCurrentRequest('summary', controller, generation) || e.name === 'AbortError') return;
+      setVisible('summary-loading', false);
       showError('Beklenmeyen bir hata oluştu: ' + e.message);
     }
-    loadTodayOrderCount();
   }
 
-  async function loadTodayOrderCount() {
+  async function loadTodayOrderCount(generation = refreshGeneration) {
+    const controller = startRequest('todayOrderCount');
     const el = document.getElementById('today-order-count');
     try {
-      const res = await fetch('/api/today-order-count');
+      const res = await fetch('/api/today-order-count', { signal: controller.signal });
       const data = await res.json();
+      if (!isCurrentRequest('todayOrderCount', controller, generation)) return;
       el.textContent = data.error ? '—' : fmtNum(data.count);
-    } catch (e) { el.textContent = '—'; }
+    } catch (e) {
+      if (isCurrentRequest('todayOrderCount', controller, generation) && e.name !== 'AbortError') el.textContent = '—';
+    }
   }
 
   // ---------- Aylık Kâr Trendi (2 görünüm: Trend Analizi / Finansal Özet) ----------
@@ -361,19 +386,22 @@
     }
   }
 
-  async function loadMonthlyProfitChart() {
+  async function loadMonthlyProfitChart(generation = refreshGeneration) {
     if (monthlyProfitLoaded) return;
+    const controller = startRequest('monthlyProfit');
     try {
-      const res = await fetch(`/api/monthly-profit?full_history=true&marketplace=${currentMarketplace}`);
+      const res = await fetch(`/api/monthly-profit?full_history=true&marketplace=${currentMarketplace}`, { signal: controller.signal });
       const data = await res.json();
+      if (!isCurrentRequest('monthlyProfit', controller, generation)) return;
       if (data.error) { showError(data.error); return; }
-      document.getElementById('monthly-loading').style.display = 'none';
-      document.getElementById('monthlyProfitChartWrap').style.display = 'block';
+      setVisible('monthly-loading', false);
+      setVisible('monthlyProfitChartWrap', true);
       renderMonthlyProfitViews(data.months || []);
       monthlyProfitLoaded = true;
       if (monthlyProfitChart) monthlyProfitChart.resize();
       if (monthlyProfitBarChart) monthlyProfitBarChart.resize();
     } catch (e) {
+      if (!isCurrentRequest('monthlyProfit', controller, generation) || e.name === 'AbortError') return;
       showError('Aylık kâr trendi alınamadı: ' + e.message);
     }
   }
@@ -657,21 +685,39 @@
   window.__lal_refreshMonthlyProfitChart = function () { monthlyProfitLoaded = false; loadMonthlyProfitChart(); };
 
   // ---------- Detaylı Grafikler (günlük satış/sipariş/iade) ----------
-  const darkChartDefaults = {
-    plugins: {
-      legend: { display: false },
-      tooltip: { backgroundColor: '#15171C', borderColor: '#3DDBD9', borderWidth: 1, padding: 12, cornerRadius: 10, titleColor: '#F2F3F5', titleFont: { size: 13, weight: '600' }, bodyColor: '#F2F3F5', bodyFont: { size: 13.5, weight: '600' }, displayColors: false }
-    },
-    scales: {
-      x: { grid: { display: false }, border: { color: '#24272E' }, ticks: { color: '#5B5F68', font: { size: 11 } } },
-      y: { beginAtZero: true, grid: { color: '#1B1E24' }, border: { display: false }, ticks: { color: '#5B5F68', font: { size: 11 } } },
-    },
-    interaction: { mode: 'index', intersect: false },
-  };
+  function currentDailyChartDefaults() {
+    const textMain = lalToken('--lal-text-main');
+    const textMuted = lalToken('--lal-text-muted');
+    const textFaint = lalToken('--lal-text-faint');
+    const surface2 = lalToken('--lal-surface-2');
+    const border = lalToken('--lal-border');
+    const borderSoft = lalToken('--lal-border-soft');
+    const green = lalToken('--lal-green');
+    return {
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: surface2, borderColor: green, borderWidth: 1, padding: 12, cornerRadius: 10, titleColor: textMain, titleFont: { size: 13, weight: '600' }, bodyColor: textMain, bodyFont: { size: 13.5, weight: '600' }, displayColors: false }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { color: border }, ticks: { color: textFaint, font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: borderSoft }, border: { display: false }, ticks: { color: textMuted, font: { size: 11 } } },
+      },
+      interaction: { mode: 'index', intersect: false },
+    };
+  }
   const tlFmtShort = new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 });
   let salesChart, ordersChart, returnsChart;
+  let chartDaily = [], chartReturnsDaily = [];
 
   function renderCharts(daily, returnsDaily) {
+    chartDaily = daily;
+    chartReturnsDaily = returnsDaily;
+    const darkChartDefaults = currentDailyChartDefaults();
+    const green = lalToken('--lal-green');
+    const greenDim = lalToken('--lal-green-dim');
+    const red = lalToken('--lal-red');
+    const redDim = lalToken('--lal-red-dim');
+    const surface = lalToken('--lal-surface');
     const labels = daily.map(d => fmtDateShort(d.date));
     const netData = daily.map(d => d.net_amount);
     const orderData = daily.map(d => d.order_count);
@@ -680,17 +726,17 @@
 
     const salesCtx = document.getElementById('salesChart').getContext('2d');
     const salesGrad = salesCtx.createLinearGradient(0, 0, 0, 260);
-    salesGrad.addColorStop(0, 'rgba(61,219,217,0.4)'); salesGrad.addColorStop(1, 'rgba(61,219,217,0.0)');
+    salesGrad.addColorStop(0, greenDim); salesGrad.addColorStop(1, 'transparent');
     if (salesChart) salesChart.destroy();
     salesChart = new Chart(salesCtx, {
       type: 'line',
-      data: { labels, datasets: [{ label: 'Net Satış (₺)', data: netData, borderColor: '#3DDBD9', backgroundColor: salesGrad, fill: true, tension: 0.4, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: '#3DDBD9', pointHoverBorderColor: '#0A0B0D', pointHoverBorderWidth: 2, borderWidth: 2.5, borderCapStyle: 'round', borderJoinStyle: 'round' }] },
+      data: { labels, datasets: [{ label: 'Net Satış (₺)', data: netData, borderColor: green, backgroundColor: salesGrad, fill: true, tension: 0.4, cubicInterpolationMode: 'monotone', pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: green, pointHoverBorderColor: surface, pointHoverBorderWidth: 2, borderWidth: 2.5, borderCapStyle: 'round', borderJoinStyle: 'round' }] },
       options: { ...darkChartDefaults, scales: { ...darkChartDefaults.scales, y: { ...darkChartDefaults.scales.y, beginAtZero: true } }, plugins: { ...darkChartDefaults.plugins, tooltip: { ...darkChartDefaults.plugins.tooltip, callbacks: { label: (ctx) => `Net Satış: ${tlFmtShort.format(ctx.parsed.y)}` } } } }
     });
 
     const ordersCtx = document.getElementById('ordersChart').getContext('2d');
     const ordersGrad = ordersCtx.createLinearGradient(0, 0, 0, 260);
-    ordersGrad.addColorStop(0, 'rgba(61,219,217,0.55)'); ordersGrad.addColorStop(1, 'rgba(61,219,217,0.15)');
+    ordersGrad.addColorStop(0, green); ordersGrad.addColorStop(1, greenDim);
     if (ordersChart) ordersChart.destroy();
     ordersChart = new Chart(ordersCtx, {
       type: 'bar',
@@ -700,7 +746,7 @@
 
     const returnsCtx = document.getElementById('returnsChart').getContext('2d');
     const returnsGrad = returnsCtx.createLinearGradient(0, 0, 0, 260);
-    returnsGrad.addColorStop(0, 'rgba(240,102,90,0.55)'); returnsGrad.addColorStop(1, 'rgba(240,102,90,0.15)');
+    returnsGrad.addColorStop(0, red); returnsGrad.addColorStop(1, redDim);
     if (returnsChart) returnsChart.destroy();
     returnsChart = new Chart(returnsCtx, {
       type: 'bar',
@@ -709,25 +755,28 @@
     });
   }
 
-  async function loadChartsSection() {
-    document.getElementById('charts-loading').style.display = 'block';
-    document.getElementById('charts-content').style.display = 'none';
+  async function loadChartsSection(generation = refreshGeneration) {
+    const controller = startRequest('charts');
+    setVisible('charts-loading', true);
+    setVisible('charts-content', false);
     try {
       const rangeParam = rangeQueryParam();
       const [salesRes, returnsRes] = await Promise.all([
-        fetch(`/api/daily-sales?${rangeParam}`),
-        fetch(`/api/daily-returns?${rangeParam}`)
+        fetch(`/api/daily-sales?${rangeParam}`, { signal: controller.signal }),
+        fetch(`/api/daily-returns?${rangeParam}`, { signal: controller.signal })
       ]);
       const salesData = await salesRes.json();
       const returnsData = await returnsRes.json();
-      if (salesData.error) { showError(salesData.error); document.getElementById('charts-loading').style.display = 'none'; return; }
-      document.getElementById('charts-loading').style.display = 'none';
-      document.getElementById('charts-content').style.display = 'block';
+      if (!isCurrentRequest('charts', controller, generation)) return;
+      if (salesData.error) { showError(salesData.error); setVisible('charts-loading', false); return; }
+      setVisible('charts-loading', false);
+      setVisible('charts-content', true);
       renderCharts(salesData.daily, returnsData.daily || []);
       [salesChart, ordersChart, returnsChart].forEach(c => c && c.resize());
       if (returnsData.error) showError('İade verileri alınamadı: ' + returnsData.error);
     } catch (e) {
-      document.getElementById('charts-loading').style.display = 'none';
+      if (!isCurrentRequest('charts', controller, generation) || e.name === 'AbortError') return;
+      setVisible('charts-loading', false);
       showError('Beklenmeyen bir hata oluştu: ' + e.message);
     }
   }
@@ -736,9 +785,13 @@
   loadSummary();
   loadChartsSection();
   document.addEventListener('lal:data-refresh', function () {
+    refreshGeneration += 1;
     monthlyProfitLoaded = false;
-    loadSummary();
-    loadChartsSection();
+    loadSummary(refreshGeneration);
+    loadChartsSection(refreshGeneration);
+  });
+  document.addEventListener('lal:theme-change', function () {
+    if (chartDaily.length || chartReturnsDaily.length) renderCharts(chartDaily, chartReturnsDaily);
   });
 
   // Uyarı bandındaki "settlement bekleyen satırlar" linkinden gelindiyse,
