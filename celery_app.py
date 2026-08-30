@@ -99,13 +99,15 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),  # her gece 04:00 (Europe/Istanbul)
         "kwargs": {"limit": None},
     },
-    # OPSİYONEL — canlı Trendyol kimlik bilgileriyle küçük bir örneklemle
-    # (limit=3-5) manuel doğrulama yaptıktan SONRA aşağıdaki yorumu kaldırın
-    # (bkz. qna_sync_tasks.py docstring'i, 29.08.2026). 03:00 ve 04:00
-    # dolu olduğu için 05:00 seçildi.
-    # "trendyol-qna-sync": {
-    #     "task": "qna_sync_tasks.sync_trendyol_questions",
-    #     "schedule": crontab(hour=5, minute=0),  # her gece 05:00 (Europe/Istanbul)
-    #     "kwargs": {"limit": None},
-    # },
+    # AKTİF — 30.08.2026: canlı ortamda manuel tetiklemeyle doğrulandı
+    # (bkz. qna_sync_tasks.py docstring'i). Gece tek seferlik bir sync
+    # yerine periodic-recent-sync ile AYNI sık aralık tercih edildi --
+    # müşteri sorusu geldiğinde saatlerce beklemesin diye. limit=5 ile
+    # kontrollü: her çalıştırmada en fazla 5 soru için AI taslağı üretilir
+    # (soruların kendisi her zaman tam çekilir, sadece AI üretimi limitli).
+    "trendyol-qna-sync": {
+        "task": "qna_sync_tasks.sync_trendyol_questions",
+        "schedule": 60 * 15,  # her 15 dakikada bir
+        "kwargs": {"limit": 5},
+    },
 }
