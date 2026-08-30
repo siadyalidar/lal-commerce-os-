@@ -61,10 +61,6 @@ function renderQna(data) {
     : '<div class="lal-empty-state">Bekleyen soru yok. 🎉</div>';
 }
 
-function fmtNum(n) {
-  return new Intl.NumberFormat('tr-TR').format(n || 0);
-}
-
 async function loadQna() {
   const loading = document.getElementById('qna-loading');
   const content = document.getElementById('qna-content');
