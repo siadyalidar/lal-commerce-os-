@@ -21,6 +21,16 @@ function safeText(id, val) { const el = document.getElementById(id); if (el) el.
 function safeDisplay(id, val) { const el = document.getElementById(id); if (el) el.style.display = val; }
 function onExist(id, evt, fn) { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); }
 
+// HTML-escape: kullanıcı/pazaryeri kaynaklı metni innerHTML içine güvenle
+// basmak için. Önceden sadece yorumlar.js'de yerel tanımlıydı; başka bir
+// panel (musteri-sorulari.js) de ihtiyaç duyunca "esc is not defined"
+// hatası verdi. Artık tüm sayfalarda ortak.
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
 // ---------- Tema tercihi ----------
 // Aynı LAL kimliği koyu ve sıcak-açık yüzeyde çalışır; seçim cihazda saklanır.
 function applyTheme(theme) {

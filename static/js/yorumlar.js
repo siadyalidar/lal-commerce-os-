@@ -26,12 +26,6 @@ function reviewCard(review, opts) {
   </article>`;
 }
 
-function esc(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
-}
-
 function renderDistribution(distribution, totalCount) {
   const el = document.getElementById('review-distribution');
   if (!el) return;
