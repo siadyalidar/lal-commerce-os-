@@ -1646,6 +1646,60 @@ def list_product_knowledge_facts(sku):
     return [dict(r) for r in rows]
 
 
+def list_questions_with_drafts(marketplace=None, include_sent=False):
+    """Panel için tek payload'lık sorgu: her soruya (varsa) taslağını
+    LEFT JOIN ile ekler -- reviews panelindeki get_review_stats/
+    list_reviews_sorted_by_date deseninin QnA karşılığı.
+
+    include_sent=False (varsayılan): zaten gönderilmiş (sent=1) sorular
+    panelin ana listesinden hariç tutulur -- işi biten bir soru sürekli
+    listede kalıp yer kaplamasın diye. include_sent=True verilirse hepsi
+    döner (ileride bir 'geçmiş' sekmesi için kullanılabilir)."""
+    query = """
+        SELECT
+            cq.marketplace, cq.question_id, cq.sku, cq.question_text,
+            cq.status, cq.source_created_at, cq.synced_at,
+            qda.draft_text, qda.needs_clarification, qda.clarification_prompt,
+            qda.model_used, qda.generated_at, qda.sent, qda.sent_at
+        FROM customer_questions cq
+        LEFT JOIN question_draft_answers qda
+            ON cq.marketplace = qda.marketplace AND cq.question_id = qda.question_id
+        WHERE 1=1
+    """
+    params = []
+    if marketplace:
+        query += " AND cq.marketplace = ?"
+        params.append(marketplace)
+    if not include_sent:
+        query += " AND (qda.sent IS NULL OR qda.sent = 0)"
+    query += " ORDER BY cq.source_created_at DESC"
+
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        d["needs_clarification"] = bool(d["needs_clarification"]) if d["needs_clarification"] is not None else None
+        d["sent"] = bool(d["sent"]) if d["sent"] is not None else False
+        results.append(d)
+    return results
+
+
+def finalize_draft_answer(marketplace, question_id, final_text):
+    """Sidar panelde taslağı (varsa) düzenleyip 'Gönderildi' işaretlediğinde
+    çağrılır -- düzenlenmiş son metni draft_text'e yazar VE sent=1 yapar,
+    tek adımda. Trendyol/HB'ye OTOMATİK bir şey göndermez -- sadece yerel
+    kaydı, gerçek gönderimin (Sidar'ın Trendyol panelinden elle yapıştırıp
+    gönderdiği) ardından tutarlı hale getirir."""
+    with get_connection() as conn:
+        conn.execute("""
+            UPDATE question_draft_answers
+            SET draft_text = ?, sent = 1, sent_at = datetime('now', 'localtime')
+            WHERE marketplace = ? AND question_id = ?
+        """, (final_text, marketplace, question_id))
+
+
 if __name__ == "__main__":
     init_db()
     print(f"Veritabanı hazır: {DB_PATH}")

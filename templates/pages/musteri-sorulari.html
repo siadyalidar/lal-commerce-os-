@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Müşteri Soruları — LAL{% endblock %}
+{% block page_title %}Müşteri Soruları{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/qna.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="lal-page-intro">
+  <p>AI destekli müşteri hizmetleri asistanı</p>
+  <h1>Trendyol sorularına <strong>hazır taslak, sen onayla.</strong></h1>
+  <span>Panel 60 saniyede bir otomatik yenilenir. Taslaklar sadece öneridir — hiçbiri sizin onayınız olmadan Trendyol'a gönderilmez.</span>
+</section>
+
+<div id="qna-loading" class="loading">Sorular hazırlanıyor…</div>
+<div id="qna-content" class="is-hidden">
+  <section class="qna-kpis">
+    <div class="report-kpi"><span>Bekleyen Soru</span><strong id="qna-pending-count">–</strong></div>
+    <div class="report-kpi"><span>Bilgi Gerekiyor</span><strong id="qna-clarification-count">–</strong></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header-row">
+      <div><h2>Sorular</h2><p class="panel-note">En yeniden eskiye sıralı. Taslağı düzenleyip kopyalayabilir, Trendyol'a elle gönderdikten sonra "Gönderildi" işaretleyebilirsiniz.</p></div>
+    </div>
+    <div id="qna-list" class="qna-list"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/musteri-sorulari.js') }}"></script>
+{% endblock %}
