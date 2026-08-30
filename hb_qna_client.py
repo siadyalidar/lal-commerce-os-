@@ -19,11 +19,15 @@ CONFIRMED (30.08.2026 Faz 0, Hepsiburada Developer Portal'dan):
              geliyor, doküman örneklerinde tutarsızlık var, response'taki
              string değer esas alındı), page (1'den başlar), size (varsayılan
              25), sortBy, desc, minCreatedAt/maxCreatedAt.
-      Response: items[] -- issueNumber, createdAt, status, expireDate,
-             product.sku, product.name, lastContent, conversations[]
-             (id, from: Customer/Merchant, content, createdAt).
-      totalPages YOK (Trendyol'dan farklı) -- sayfalama items boşalana/
-      size'dan az gelene kadar devam eder.
+      Response (30.08.2026 CANLI ORTAM DOĞRULAMASI -- dokümanın örnek
+             şemasından FARKLI): {"data": [...], "currentPage",
+             "currentPageSize", "totalPageCount", "totalItemCount",
+             "nextPage", "previousPage"} -- "items"/"totalCount" DEĞİL,
+             doküman örneği yanıltıcıydı. data[] içindeki alanlar
+             (issueNumber, product.sku, conversations[] vb.) henüz canlı
+             "dolu" bir response ile doğrulanmadı, dokümana dayalı kaldı.
+      Sayfalama: nextPage None olana kadar devam edilmeli (Trendyol'un
+             totalPages deseninden FARKLI).
 
   POST /api/v1.0/issues/{number}/answer
       multipart/form-data. Alanlar: Answer (metin, max 2000 karakter),
@@ -104,10 +108,20 @@ def fetch_questions(status, page_size=25):
     client'ıyla AYNI normalize şemada satırlar döner: [{question_id, sku,
     question_text, status, source_created_at, answer_text}].
 
+    ÖNEMLİ (30.08.2026 CANLI ORTAM DOĞRULAMASI): resmi dokümanın örnek
+    şemasında "items"/"totalCount" vardı, ama Sidar'ın canlı ortamda
+    çalıştırdığı gerçek istek response'ta "data" alanını ve
+    "currentPage"/"totalPageCount"/"nextPage" sayfalama alanlarını
+    döndürdü -- "items" YOK. Bu fonksiyon CANLI DOĞRULANMIŞ şemayı
+    kullanır. Sayfalama nextPage None olana kadar devam eder (Trendyol'un
+    totalPages deseninden FARKLI).
+
     status burada HAM STRING olarak API'ye geçilir ve response'tan gelen
     status da OLDUĞU GİBİ döner ("WaitingForAnswer" vb, PascalCase) --
     Trendyol'un UPPER_SNAKE_CASE enum'uyla KARIŞTIRILMAMALI, çağıran taraf
-    (marketplace-aware) bunu bilerek ele almalı.
+    (marketplace-aware) bunu bilerek ele almalı. (issueNumber, product.sku,
+    conversations[] alanları henüz canlı "dolu" bir response ile
+    doğrulanmadı -- dokümana dayalı, UNVERIFIED kaldı.)
 
     sku eksikse (product.sku API'den gelmezse) SESSİZCE atlanmaz, None
     olarak işaretlenir -- Trendyol client'ıyla aynı kural."""
@@ -116,8 +130,8 @@ def fetch_questions(status, page_size=25):
 
     while True:
         params = {"page": page, "size": page_size, "status": status}
-        data = hb_qna_get("/api/v1.0/issues", params=params)
-        items = data.get("items", [])
+        response = hb_qna_get("/api/v1.0/issues", params=params)
+        items = response.get("data", [])
 
         for item in items:
             all_rows.append({
@@ -129,9 +143,9 @@ def fetch_questions(status, page_size=25):
                 "answer_text": _extract_answer_text(item),
             })
 
-        if len(items) < page_size:
+        if not response.get("nextPage"):
             break
-        page += 1
+        page = response["nextPage"]
 
     return all_rows
 

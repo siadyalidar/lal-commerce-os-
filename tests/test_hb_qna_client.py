@@ -2,20 +2,23 @@
 tests/test_hb_qna_client.py
 ------------------------------------
 hb_qna_client.py'nin saf parse mantığını kapsar. hb_qna_get() (dolayısıyla
-gerçek "Satıcıya Sor" API'si) her testte mock'lanır -- bu client'ın
-GET issues / POST issues/{number}/answer davranışı 30.08.2026 Faz 0
-denetiminde resmi Hepsiburada Developer Portal dokümantasyonundan
-(CONFIRMED) doğrulandı:
-https://developers.hepsiburada.com/tr -> Satıcıya Sor Entegrasyonu
+gerçek "Satıcıya Sor" API'si) her testte mock'lanır.
 
-ÖNEMLİ FARK (Trendyol'a göre): HB status değerleri PascalCase
-("WaitingForAnswer", "Answered", "Rejected", "AutoClosed") -- Trendyol'un
-UPPER_SNAKE_CASE ("WAITING_FOR_ANSWER") formatından farklı. Bu client
-ham status string'ini OLDUĞU GİBİ döner, normalize etmez -- çağıran taraf
-(marketplace-aware sync_task/routes) bunu bilerek ele almalı.
+ÖNEMLİ (30.08.2026 CANLI ORTAM DOĞRULAMASI): resmi Developer Portal
+dokümanı response şemasını "items"/"totalCount" gibi tarif ediyordu, ama
+Sidar'ın canlı ortamda çalıştırdığı GERÇEK istek şunu döndü:
+  {"data": [...], "currentPage": 1, "currentPageSize": 5,
+   "totalPageCount": 0, "totalItemCount": 0, "nextPage": null,
+   "previousPage": null}
+Yani gerçek alan adları "data" + "currentPage"/"totalPageCount"/"nextPage"
+-- "items" YOK. Bu testler CANLI DOĞRULANMIŞ şemayı esas alır, dokümanın
+örnek şemasını DEĞİL.
 
-CONFIRMED: cevaplama için 1 iş günü süre sınırı var, süre dolan sorular
-otomatik AutoClosed'a düşüyor (Trendyol'da böyle bir kısıt yok).
+Diğer alanlar (issueNumber, product.sku, conversations[], status vb.)
+henüz canlı bir "dolu" response ile doğrulanmadı (test sırasında HB'de
+bekleyen soru yoktu) -- bunlar hâlâ dokümana dayalı, UNVERIFIED olarak
+işaretli kalıyor. İlk gerçek soru geldiğinde bu alanlar da teyit
+edilmeli.
 """
 
 from unittest.mock import patch
@@ -26,8 +29,13 @@ from hb_qna_client import fetch_questions, send_answer
 
 
 _SAMPLE_API_RESPONSE = {
-    "totalCount": 2,
-    "items": [
+    "currentPage": 1,
+    "currentPageSize": 25,
+    "totalPageCount": 1,
+    "totalItemCount": 2,
+    "nextPage": None,
+    "previousPage": None,
+    "data": [
         {
             "issueNumber": 5001,
             "createdAt": "2026-08-28T10:00:00Z",
@@ -106,36 +114,54 @@ def test_fetch_questions_extracts_merchant_answer_text(mock_get):
 
 @patch("hb_qna_client.hb_qna_get")
 def test_fetch_questions_passes_status_param(mock_get):
-    mock_get.return_value = {"items": [], "totalCount": 0}
+    mock_get.return_value = {"data": [], "currentPage": 1, "totalPageCount": 0, "nextPage": None}
     fetch_questions(status="WaitingForAnswer")
     call_kwargs = mock_get.call_args.kwargs
     assert call_kwargs["params"]["status"] == "WaitingForAnswer"
 
 
 @patch("hb_qna_client.hb_qna_get")
-def test_fetch_questions_paginates_until_empty_page(mock_get):
-    """CONFIRMED doküman page/size döndürüyor ama toplam sayfa sayısı
-    dönmüyor -- boş bir sayfa gelene kadar (veya items < size olana kadar)
-    sayfalamaya devam etmek gerekiyor (Trendyol'daki totalPages deseninden
-    FARKLI, bu yüzden ayrı test)."""
-    page0_items = [_SAMPLE_API_RESPONSE["items"][0]] * 25  # size=25 dolu sayfa
-    page1_items = [_SAMPLE_API_RESPONSE["items"][1]]  # yarım sayfa -> son sayfa
-    mock_get.side_effect = [
-        {"items": page0_items, "totalCount": 26},
-        {"items": page1_items, "totalCount": 26},
-    ]
+def test_fetch_questions_paginates_using_next_page_field(mock_get):
+    """CANLI DOĞRULANDI (30.08.2026): response'ta totalPages YOK, ama
+    nextPage/currentPage/totalPageCount VAR -- sayfalama bunlara göre
+    yapılmalı (items sayısına bakan tahmin bazlı heuristiğe DEĞİL)."""
+    page1 = {
+        "data": [_SAMPLE_API_RESPONSE["data"][0]],
+        "currentPage": 1, "totalPageCount": 2, "nextPage": 2,
+    }
+    page2 = {
+        "data": [_SAMPLE_API_RESPONSE["data"][1]],
+        "currentPage": 2, "totalPageCount": 2, "nextPage": None,
+    }
+    mock_get.side_effect = [page1, page2]
     rows = fetch_questions(status="WaitingForAnswer")
-    assert len(rows) == 26
+    assert len(rows) == 2
     assert mock_get.call_count == 2
+
+
+@patch("hb_qna_client.hb_qna_get")
+def test_fetch_questions_stops_when_data_empty(mock_get):
+    """30.08.2026 canlı ortamda bekleyen soru olmadığında gerçek response:
+    data=[], totalPageCount=0, nextPage=null -- tek çağrıda durmalı,
+    sonsuz döngüye girmemeli."""
+    mock_get.return_value = {
+        "data": [], "currentPage": 1, "currentPageSize": 5,
+        "totalPageCount": 0, "totalItemCount": 0, "nextPage": None, "previousPage": None,
+    }
+    rows = fetch_questions(status="WaitingForAnswer")
+    assert rows == []
+    assert mock_get.call_count == 1
 
 
 @patch("hb_qna_client.hb_qna_get")
 def test_fetch_questions_missing_sku_not_silently_dropped(mock_get):
     """product.sku eksikse sku None kalmalı, satır SESSİZCE atlanmamalı
     (no silent data absence prensibi, Trendyol client'ıyla aynı kural)."""
-    broken_row = dict(_SAMPLE_API_RESPONSE["items"][0])
+    broken_row = dict(_SAMPLE_API_RESPONSE["data"][0])
     broken_row["product"] = {}
-    mock_get.return_value = {"items": [broken_row], "totalCount": 1}
+    mock_get.return_value = {
+        "data": [broken_row], "currentPage": 1, "totalPageCount": 1, "nextPage": None,
+    }
     rows = fetch_questions(status="WaitingForAnswer")
     assert len(rows) == 1
     assert rows[0]["sku"] is None
@@ -156,3 +182,4 @@ def test_send_answer_rejects_too_long_text():
     icat edilmedi)."""
     with pytest.raises(ValueError):
         send_answer(question_id="5001", text="a" * 2001)
+
