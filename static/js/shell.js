@@ -12,7 +12,7 @@ const fmtTL = (n) => n === null || n === undefined ? '–' : new Intl.NumberForm
 const fmtTL2 = (n) => n === null || n === undefined ? '—' : '₺' + Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtNum = (n) => n === null || n === undefined ? '–' : new Intl.NumberFormat('tr-TR').format(n);
 const fmtPct = (n) => n === null || n === undefined ? '–' : (n * 100).toFixed(1) + '%';
-const fmtDateShort = (d) => new Date(d).toLocaleDateString('tr-TR', {day:'2-digit', month:'short'});
+const fmtDateShort = (d) => { if (!d) return '–'; const parsed = new Date(d); return isNaN(parsed) ? '–' : parsed.toLocaleDateString('tr-TR', {day:'2-digit', month:'short'}); };
 function fmtDateTime(ms) { if (!ms) return '—'; const d = new Date(ms); return d.toLocaleDateString('tr-TR') + ' ' + d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
 
 // Bir sayfada bulunmayan elementlere erişilmeye çalışıldığında hata

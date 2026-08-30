@@ -374,7 +374,13 @@
    UTILITY — JS'in element.style.display ile açtığı/kapattığı elementlerin
    başlangıç durumu (inline style="display:none" yerine)
    --------------------------------------------------------------------- */
-.is-hidden { display: none; }
+/* !important: precision-theme.css'teki .loading{display:grid} gibi tek-class
+   kurallar aynı specificity'de bu dosyadan SONRA yüklendiği için is-hidden'ı
+   eziyordu (loading göstergesi JS tarafından gizlense de görünür kalıyordu --
+   Müşteri Soruları, Yorumlar, Raporlar panellerinde donmuş yükleniyor sorunu).
+   is-hidden bir utility class olduğu için "ne olursa olsun gizle" davranışı
+   doğrusu. */
+.is-hidden { display: none !important; }
 
 .lal-callout {
   margin-top: var(--lal-space-4);
