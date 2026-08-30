@@ -10,10 +10,11 @@ from unittest.mock import patch
 from tests.conftest import auth_headers
 
 
-def _seed_question(db, question_id="1001", sku="SH-8IN1-METER"):
+def _seed_question(db, question_id="1001", sku="SH-8IN1-METER", marketplace="trendyol"):
+    status = "WAITING_FOR_ANSWER" if marketplace == "trendyol" else "WaitingForAnswer"
     db.upsert_customer_questions([{
-        "marketplace": "trendyol", "question_id": question_id, "sku": sku,
-        "question_text": "Pil ömrü ne kadar?", "status": "WAITING_FOR_ANSWER",
+        "marketplace": marketplace, "question_id": question_id, "sku": sku,
+        "question_text": "Pil ömrü ne kadar?", "status": status,
         "source_created_at": "2026-08-30T10:00:00",
     }])
 
@@ -125,3 +126,31 @@ def test_qna_finalize_marks_sent(client, db):
 def test_qna_finalize_requires_fields(client, db):
     resp = client.post("/api/qna/finalize", headers=auth_headers(), json={"marketplace": "trendyol"})
     assert resp.status_code == 400
+
+
+def test_qna_overview_no_marketplace_param_returns_all(client, db):
+    """30.08.2026 Faz 2: marketplace param verilmezse (ya da 'all') hem
+    Trendyol hem HB soruları birlikte dönmeli -- eskiden hardcoded
+    marketplace='trendyol' idi, HB verisi hiç görünmüyordu."""
+    _seed_question(db, question_id="1001", marketplace="trendyol")
+    _seed_question(db, question_id="5001", marketplace="hepsiburada")
+    resp = client.get("/api/qna/overview", headers=auth_headers())
+    data = resp.get_json()
+    assert len(data["questions"]) == 2
+
+
+def test_qna_overview_filters_by_marketplace_param(client, db):
+    _seed_question(db, question_id="1001", marketplace="trendyol")
+    _seed_question(db, question_id="5001", marketplace="hepsiburada")
+    resp = client.get("/api/qna/overview?marketplace=hepsiburada", headers=auth_headers())
+    data = resp.get_json()
+    assert len(data["questions"]) == 1
+    assert data["questions"][0]["marketplace"] == "hepsiburada"
+
+
+def test_qna_overview_marketplace_all_returns_both(client, db):
+    _seed_question(db, question_id="1001", marketplace="trendyol")
+    _seed_question(db, question_id="5001", marketplace="hepsiburada")
+    resp = client.get("/api/qna/overview?marketplace=all", headers=auth_headers())
+    data = resp.get_json()
+    assert len(data["questions"]) == 2

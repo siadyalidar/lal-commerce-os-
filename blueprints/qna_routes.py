@@ -21,8 +21,12 @@ def qna_page():
 
 @bp.route("/api/qna/overview")
 def qna_overview():
+    marketplace = request.args.get("marketplace")
+    if marketplace in (None, "", "all", "Tümü"):
+        marketplace = None
+
     try:
-        questions = database.list_questions_with_drafts(marketplace="trendyol")
+        questions = database.list_questions_with_drafts(marketplace=marketplace)
     except Exception as exc:
         return jsonify({"error": f"Sorular yüklenemedi: {exc}"}), 500
 

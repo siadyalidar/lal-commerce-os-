@@ -66,7 +66,7 @@ async function loadQna() {
   const content = document.getElementById('qna-content');
   if (!loading || !content) return;
   try {
-    const response = await fetch('/api/qna/overview');
+    const response = await fetch(`/api/qna/overview?marketplace=${currentMarketplace}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Sorular yüklenemedi.');
     renderQna(data);
