@@ -46,7 +46,9 @@ celery_app = Celery(
     # hb_review_sync_tasks: 23.08.2026 eklendi. Beat'e OTOMATİK eklenmedi
     # (bkz. hb_review_sync_tasks.py docstring'i) -- canlı ortamda küçük bir
     # örneklemle manuel doğrulama yapılmadan periyodik çalıştırmak riskli.
-    include=["tasks", "payout_scrape_tasks", "hb_review_sync_tasks"],
+    # qna_sync_tasks: 29.08.2026 eklendi -- AYNI kural, Beat'e otomatik
+    # eklenmedi (bkz. qna_sync_tasks.py docstring'i).
+    include=["tasks", "payout_scrape_tasks", "hb_review_sync_tasks", "qna_sync_tasks"],
 )
 
 celery_app.conf.update(
@@ -97,4 +99,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),  # her gece 04:00 (Europe/Istanbul)
         "kwargs": {"limit": None},
     },
+    # OPSİYONEL — canlı Trendyol kimlik bilgileriyle küçük bir örneklemle
+    # (limit=3-5) manuel doğrulama yaptıktan SONRA aşağıdaki yorumu kaldırın
+    # (bkz. qna_sync_tasks.py docstring'i, 29.08.2026). 03:00 ve 04:00
+    # dolu olduğu için 05:00 seçildi.
+    # "trendyol-qna-sync": {
+    #     "task": "qna_sync_tasks.sync_trendyol_questions",
+    #     "schedule": crontab(hour=5, minute=0),  # her gece 05:00 (Europe/Istanbul)
+    #     "kwargs": {"limit": None},
+    # },
 }
