@@ -110,16 +110,15 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 15,  # her 15 dakikada bir
         "kwargs": {"limit": 5},
     },
-    # OPSİYONEL — 30.08.2026 Faz 2: hb_qna_client.py ve
-    # sync_hepsiburada_questions eklendi ama HENÜZ canlı ortamda küçük bir
-    # örneklemle (limit=3-5) manuel doğrulanmadı. Trendyol QnA ile AYNI
-    # kural: doğrulama yapılıp sonucu onaylanmadan bu yorumu KALDIRMAYIN.
-    # HB'de cevaplama için 1 iş günü süre sınırı var (Trendyol'da yok) --
-    # bu yüzden aktive edildiğinde de en az Trendyol kadar sık (15dk)
-    # çalışmalı, süresi geçen soru otomatik AutoClosed olup kaçmasın.
-    # "hepsiburada-qna-sync": {
-    #     "task": "qna_sync_tasks.sync_hepsiburada_questions",
-    #     "schedule": 60 * 15,  # her 15 dakikada bir
-    #     "kwargs": {"limit": 5},
-    # },
+    # AKTİF — 30.08.2026: canlı ortamda manuel tetiklemeyle doğrulandı
+    # (WaitingForAnswer boş sonuç doğru şekilde döndü, Answered 125 gerçek
+    # kayıtla şema tam eşleşti -- bkz. hb_qna_client.py docstring'i).
+    # Trendyol QnA ile AYNI sıklık (15dk) -- HB'de 1 iş günü cevaplama
+    # süresi olduğu için (Trendyol'da yok) süresi geçip AutoClosed'a
+    # düşen soru kaçmasın diye günde bir kez YETERLİ DEĞİL.
+    "hepsiburada-qna-sync": {
+        "task": "qna_sync_tasks.sync_hepsiburada_questions",
+        "schedule": 60 * 15,  # her 15 dakikada bir
+        "kwargs": {"limit": 5},
+    },
 }
