@@ -247,6 +247,13 @@
   // token'ın hangi tonda tanımlı olduğuna bağlı olmayan, garantili en
   // yüksek kontrast sonucu verir (açık temada ise --lal-text-main zaten
   // koyu/okunur bir ton, bkz. precision-theme.css).
+  //
+  // İSTİSNA — devam eden (şu anki) ay: bu her zaman en sağdaki bar'dır ve
+  // sağında komşu bar olmadığı için çakışma riski yoktur. Ayın ilk
+  // günlerinde kümülatif rakamlar henüz çok küçük olabileceğinden (bar
+  // 14px eşiğinin altında kalır) bu eşik istisnasız uygulanırsa devam
+  // eden ay için Ciro/Brüt Kâr/Net Kâr etiketleri tamamen kaybolur — veri
+  // yokmuş gibi görünür. currentMonthIndex bu ay için eşiği by-pass eder.
   const MONTHLY_PROFIT_LABEL_MIN_PX = 14;
   function monthlyProfitValueLabelColor() {
     return document.documentElement.dataset.lalTheme === 'dark'
@@ -268,7 +275,10 @@
         meta.data.forEach((bar, i) => {
           const value = ds.data[i];
           if (!value) return; // 0 / null / undefined -> etiket yok
-          if (Math.abs(bar.y - zeroY) < MONTHLY_PROFIT_LABEL_MIN_PX) return; // çok kısa çubuk -> atla
+          const isCurrentMonthBar = i === chart.currentMonthIndex;
+          // Devam eden ay dışındaki barlarda eşik korunur (çakışma önleme);
+          // devam eden ay komşusuz olduğu için eşikten muaf tutulur.
+          if (!isCurrentMonthBar && Math.abs(bar.y - zeroY) < MONTHLY_PROFIT_LABEL_MIN_PX) return;
           const isNeg = value < 0;
           ctx.textBaseline = isNeg ? 'top' : 'bottom';
           ctx.fillText(monthlyProfitCompactTl(value), bar.x, bar.y + (isNeg ? 4 : -4));
@@ -509,6 +519,18 @@
     return { labels, dataByKey };
   }
 
+  // Aynı "bu ay = şu anki gerçek ay mı" mantığı renderMonthlyProfitInProgressBadge
+  // ile birebir tutarlı olmalı (tek kaynak, iki yerde farklı hesap olmasın).
+  // months son elemanı en güncel aydır; gerçek bugünün ay anahtarıyla
+  // eşleşiyorsa index'i, eşleşmiyorsa -1 döner (etiket eşiği her yerde uygulanır).
+  function monthlyProfitCurrentMonthIndex(months) {
+    if (!months.length) return -1;
+    const last = months[months.length - 1];
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return last.month === currentKey ? months.length - 1 : -1;
+  }
+
   // ---------- GRAFİK 1: Trend Analizi (sade 3-çizgi, mevcut yaklaşım) ----------
   function renderMonthlyProfitLineChart(months) {
     const { labels, dataByKey } = monthlyProfitBuildData(months);
@@ -596,6 +618,7 @@
     if (monthlyProfitBarChart) {
       monthlyProfitBarChart.data.labels = labels;
       monthlyProfitMetrics().forEach((m, i) => { monthlyProfitBarChart.data.datasets[i].data = dataByKey[m.key]; });
+      monthlyProfitBarChart.currentMonthIndex = monthlyProfitCurrentMonthIndex(months);
       monthlyProfitBarChart.update();
       return;
     }
@@ -646,6 +669,7 @@
       },
       plugins: [monthlyProfitBarValueLabels],
     });
+    monthlyProfitBarChart.currentMonthIndex = monthlyProfitCurrentMonthIndex(months);
 
     renderMonthlyProfitSelector(metrics);
   }
