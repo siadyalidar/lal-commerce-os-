@@ -17,6 +17,7 @@ import requests
 from flask import Blueprint, jsonify, request, send_file
 
 from database import get_connection, list_product_images
+from finance_engine import NEVER_FULFILLED_STATUSES
 from finance_engine import best_sellers as compute_best_sellers
 from finance_engine import compute_profit_summary
 from sync_core import DATA_START_DATE, _check_credentials, _resolve_sync_range, get_daily_returns
@@ -110,20 +111,31 @@ def daily_sales():
         "order_count": 0, "gross_amount": 0.0, "discount_amount": 0.0,
         "net_amount": 0.0, "commission_amount": 0.0, "item_count": 0, "cancelled_count": 0,
     })
-    CANCELLED_STATUSES = {"Cancelled", "İptal Edildi", "Returned", "UnDelivered", "UnPacked"}
 
-    # DÜZELTME (B1 - Faz 0 audit): iptal edilen siparişler cancelled_count'a
-    # sayılıyordu AMA gross_amount/discount_amount/net_amount/item_count/
-    # commission_amount toplamlarından hiç çıkarılmıyordu — "Bugünkü Satış"
-    # ve tüm daily-sales toplamları iptal edilen siparişlerin tutarıyla
-    # şişiyordu. order_count kasıtlı olarak İSTİSNA: bu "kaç sipariş geldi"
-    # ham operasyonel sayacı, "satış tutarı" değil — iptaller zaten ayrıca
-    # cancelled_count ile görünür kalıyor.
+    # DÜZELTME (B1 - Faz 0 audit, B2 ile birlikte AMENDMENT): iptal edilen
+    # siparişler cancelled_count'a sayılıyordu AMA gross_amount/discount_amount/
+    # net_amount/item_count/commission_amount toplamlarından hiç çıkarılmıyordu
+    # — "Bugünkü Satış" ve tüm daily-sales toplamları iptal edilen siparişlerin
+    # tutarıyla şişiyordu. order_count kasıtlı olarak İSTİSNA: bu "kaç sipariş
+    # geldi" ham operasyonel sayacı, "satış tutarı" değil — iptaller zaten
+    # ayrıca cancelled_count ile görünür kalıyor.
+    #
+    # AMENDMENT (B2 audit): statü listesi artık BURADA AYRI TUTULMUYOR —
+    # finance_engine.NEVER_FULFILLED_STATUSES import edilip TEK KAYNAK olarak
+    # kullanılıyor. Önceki yerel CANCELLED_STATUSES listesi "Returned"ı da
+    # içeriyordu ama bu YANLIŞTI: bir "Returned" sipariş gerçek bir satıştı
+    # (kargoya çıktı, sonra iade edildi) — muhasebe kuralımıza göre (bkz.
+    # memory: "sale revenue stays in the sale's period, return reversal goes
+    # to the return's period") satış GÜNÜNDEKİ tutarından silinmemeli; iade
+    # ayrıca /api/daily-returns'te izleniyor. finance_engine.py zaten bunu
+    # doğru yapıyordu (NEVER_FULFILLED_STATUSES'ta "Returned" yok) — iki
+    # dosyada iki farklı liste olması ("Bugünkü Satış" iki farklı endpoint'te
+    # iki farklı rakam göstermesi) B2 audit bulgusunun kök nedeniydi.
     for r in order_rows:
         day_key = datetime.fromtimestamp(r["order_date"] / 1000).strftime("%Y-%m-%d")
         d = daily_map[day_key]
         d["order_count"] += 1
-        is_cancelled = r["status"] in CANCELLED_STATUSES
+        is_cancelled = r["status"] in NEVER_FULFILLED_STATUSES
         if is_cancelled:
             d["cancelled_count"] += 1
         else:
