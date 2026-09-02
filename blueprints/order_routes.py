@@ -112,17 +112,26 @@ def daily_sales():
     })
     CANCELLED_STATUSES = {"Cancelled", "İptal Edildi", "Returned", "UnDelivered", "UnPacked"}
 
+    # DÜZELTME (B1 - Faz 0 audit): iptal edilen siparişler cancelled_count'a
+    # sayılıyordu AMA gross_amount/discount_amount/net_amount/item_count/
+    # commission_amount toplamlarından hiç çıkarılmıyordu — "Bugünkü Satış"
+    # ve tüm daily-sales toplamları iptal edilen siparişlerin tutarıyla
+    # şişiyordu. order_count kasıtlı olarak İSTİSNA: bu "kaç sipariş geldi"
+    # ham operasyonel sayacı, "satış tutarı" değil — iptaller zaten ayrıca
+    # cancelled_count ile görünür kalıyor.
     for r in order_rows:
         day_key = datetime.fromtimestamp(r["order_date"] / 1000).strftime("%Y-%m-%d")
         d = daily_map[day_key]
         d["order_count"] += 1
-        d["gross_amount"] += r["gross_amount"] or 0
-        d["discount_amount"] += r["discount_amount"] or 0
-        d["net_amount"] += r["net_amount"] or 0
-        d["item_count"] += item_counts.get((r["marketplace"], r["shipment_package_id"]), 0)
-        d["commission_amount"] += commission_by_key.get((r["marketplace"], r["shipment_package_id"]), 0)
-        if r["status"] in CANCELLED_STATUSES:
+        is_cancelled = r["status"] in CANCELLED_STATUSES
+        if is_cancelled:
             d["cancelled_count"] += 1
+        else:
+            d["gross_amount"] += r["gross_amount"] or 0
+            d["discount_amount"] += r["discount_amount"] or 0
+            d["net_amount"] += r["net_amount"] or 0
+            d["item_count"] += item_counts.get((r["marketplace"], r["shipment_package_id"]), 0)
+            d["commission_amount"] += commission_by_key.get((r["marketplace"], r["shipment_package_id"]), 0)
 
     daily = [{"date": k, **v} for k, v in sorted(daily_map.items())]
     for d in daily:
