@@ -1177,6 +1177,68 @@ def test_payout_lag_days_recognizes_manual_refund_as_return(db):
     assert result["trendyol"]["return"]["averageLagDays"] == pytest.approx(15.0, abs=0.1)
 
 
+
+# ============================================================
+# 5c) B2 audit: settlement öncesi tahmini grossRevenue - marketplace
+#     arası line_unit_price semantik farkı (Trendyol=indirim SONRASI net,
+#     HB=indirim ÖNCESİ brüt) yüzünden estimated grossRevenue tutarsızdı.
+# ============================================================
+
+def test_estimated_gross_revenue_adds_back_trendyol_discounts(db):
+    """Settlement kaydı YOKKEN (tahmini dal), Trendyol satırında
+    line_unit_price zaten indirim SONRASI net'tir -- seller_discount/
+    marketplace_discount geri eklenmezse grossRevenue gerçek brüt
+    tutarın altında kalır. quantity>1 olduğunda indirimler de quantity
+    ile çarpılmalı (gerçek DB verisiyle doğrulandı: 11558378577 siparişi,
+    qty=2, line_unit_price=1210.41, seller_discount=134.49/adet ->
+    gerçek order.gross_amount=2689.80 = (1210.41+134.49)*2)."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    upsert_orders([{
+        "shipment_package_id": 200, "marketplace": "trendyol", "order_number": "ONDISC1",
+        "order_date": now_ms, "status": "Delivered", "customer": "Test",
+        "cargo_provider": "Aras", "gross_amount": 2689.80, "discount_amount": 268.98,
+        "net_amount": 2420.82,
+    }])
+    upsert_order_lines([{
+        "shipment_package_id": 200, "marketplace": "trendyol", "barcode": "SKU-DISC",
+        "merchant_sku": "SKU-DISC", "product_name": "Test Ürün", "quantity": 2,
+        "line_unit_price": 1210.41, "commission_rate": 10.0,
+        "seller_discount": 134.49, "marketplace_discount": 0.0,
+    }])
+    # KASITLI: hiç settlement yok -> tahmini dal tetiklenir.
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+
+    # DOĞRU: (line_unit_price + seller_discount + marketplace_discount) * quantity
+    assert line["grossRevenue"] == pytest.approx(2689.80)
+    assert line["estimated"] is True
+
+
+def test_estimated_gross_revenue_unaffected_for_hb_without_discount_fields(db):
+    """HB satırlarında seller_discount/marketplace_discount hiç yok (None) --
+    formül otomatik olarak eski davranışa (quantity * line_unit_price)
+    düşmeli, HB için hiçbir regresyon olmamalı."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    upsert_orders([{
+        "shipment_package_id": 201, "marketplace": "hepsiburada", "order_number": "ONHB1",
+        "order_date": now_ms, "status": "Delivered", "customer": "Test",
+        "cargo_provider": "hepsiJET", "gross_amount": 400.0, "discount_amount": 0.0,
+        "net_amount": 400.0,
+    }])
+    upsert_order_lines([{
+        "shipment_package_id": 201, "marketplace": "hepsiburada", "barcode": "SKU-HB",
+        "merchant_sku": "SKU-HB", "product_name": "Test Ürün", "quantity": 2,
+        "line_unit_price": 200.0, "commission_rate": 10.0,
+    }])
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="hepsiburada")
+    line = summary["lines"][0]
+
+    assert line["grossRevenue"] == pytest.approx(400.0)
+    assert line["estimated"] is True
+
+
 def test_payout_calendar_recognizes_manual_refund(db):
     """payout_calendar() de ManualRefund'u 'return' kategorisiyle netleştirip
     ilgili güne 'lagEstimated' olarak yazmalı, sessizce atlamamalı."""

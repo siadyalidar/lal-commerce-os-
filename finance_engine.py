@@ -170,6 +170,7 @@ def _load_lines(conn, start_ms, end_ms):
     return conn.execute(f"""
         SELECT ol.shipment_package_id, ol.marketplace, ol.barcode, ol.merchant_sku, ol.product_name,
                ol.quantity, ol.line_unit_price, ol.commission_rate,
+               ol.seller_discount, ol.marketplace_discount,
                o.order_date, o.order_number, o.status
         FROM order_lines ol
         JOIN orders o ON o.shipment_package_id = ol.shipment_package_id
@@ -545,7 +546,23 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         estimated = False
     else:
         rate = (ln["commission_rate"] or 0) / 100
-        gross_revenue = (ln["line_unit_price"] or 0) * (ln["quantity"] or 0)
+        # DÜZELTME (B2 audit): line_unit_price marketplace'ler arası FARKLI
+        # anlam taşıyor -- Trendyol'da indirim SONRASI net, HB'de indirim
+        # ÖNCESİ brüt (gerçek DB verisiyle doğrulandı: 10/10 Trendyol
+        # satırında (line_unit_price+seller_discount+marketplace_discount)
+        # * quantity, order.gross_amount ile birebir eşleşiyor). Bu ikisini
+        # geri eklemeden hesap, Trendyol'da "grossRevenue" adı altında aslında
+        # NET bir rakam üretiyordu -- ve settlement kaydı GENELDE "bugünkü"
+        # siparişlerde henüz gelmediği için bu tahmini dal tam da "Bugünkü
+        # Satış" gösterildiği an devreye giriyordu. HB'de bu alanlar hep NULL
+        # olduğu için formül otomatik olarak eski davranışa düşer (regresyon
+        # yok).
+        unit_price_with_discounts = (
+            (ln["line_unit_price"] or 0)
+            + (ln["seller_discount"] or 0)
+            + (ln["marketplace_discount"] or 0)
+        )
+        gross_revenue = unit_price_with_discounts * (ln["quantity"] or 0)
         commission = gross_revenue * rate
         service_fee = 0.0
         net_hakedis = gross_revenue - commission
