@@ -317,11 +317,26 @@ def _migrate_review_first_synced_at(conn):
     # listesine hiç girmezler (doğru davranış, gerçekten bugün eklenmediler).
 
 
+def _migrate_hb_discount_breakdown(conn):
+    """orders'a hb_discount_amount / merchant_discount_amount ekler (B3 - Faz 0
+    audit). ÖNCEKİ DURUM: sync_core.py HB paket senkronunda totalHBDiscount
+    (platform/HB'nin karşıladığı indirim) ve totalMerchantDiscount (satıcının
+    kendi cebinden karşıladığı indirim) TEK bir discount_amount'ta toplanıp
+    ekonomik ayrım kayboluyordu -- ikisi çok farklı finansal anlam taşır
+    (biri satıcı gideri, diğeri değil). discount_amount toplam olarak
+    KALMAYA devam eder (geriye dönük uyumluluk, gross-net hesabı bozulmasın);
+    bu iki yeni kolon sadece HB için doldurulur, Trendyol satırlarında NULL
+    kalır (Trendyol'da böyle bir ayrım/API alanı yok)."""
+    _ensure_column(conn, "orders", "hb_discount_amount", "REAL")
+    _ensure_column(conn, "orders", "merchant_discount_amount", "REAL")
+
+
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
     ("2026_08_09_growth_columns", _migrate_growth_columns),
     ("2026_08_11_supplier_debt_v2", _migrate_supplier_debt_v2),
     ("2026_08_24_review_first_synced_at", _migrate_review_first_synced_at),
+    ("2026_09_03_hb_discount_breakdown", _migrate_hb_discount_breakdown),
 ]
 
 def init_db():
@@ -700,15 +715,23 @@ def init_db():
 
 def upsert_orders(rows):
     """rows: dict listesi. Her dict 'marketplace' alanı içermeli
-    (örn. 'trendyol' veya 'hepsiburada')."""
+    (örn. 'trendyol' veya 'hepsiburada').
+    hb_discount_amount / merchant_discount_amount: SADECE Hepsiburada için
+    doldurulur (B3 - Faz 0 audit, bkz. _migrate_hb_discount_breakdown);
+    Trendyol çağrılarında verilmezse NULL kalır."""
     if not rows:
         return
+    for r in rows:
+        r.setdefault("hb_discount_amount", None)
+        r.setdefault("merchant_discount_amount", None)
     with get_connection() as conn:
         conn.executemany("""
             INSERT INTO orders (shipment_package_id, marketplace, order_number, order_date, status,
-                                 customer, cargo_provider, gross_amount, discount_amount, net_amount)
+                                 customer, cargo_provider, gross_amount, discount_amount, net_amount,
+                                 hb_discount_amount, merchant_discount_amount)
             VALUES (:shipment_package_id, :marketplace, :order_number, :order_date, :status,
-                    :customer, :cargo_provider, :gross_amount, :discount_amount, :net_amount)
+                    :customer, :cargo_provider, :gross_amount, :discount_amount, :net_amount,
+                    :hb_discount_amount, :merchant_discount_amount)
             ON CONFLICT(marketplace, shipment_package_id) DO UPDATE SET
                 order_number=excluded.order_number,
                 order_date=excluded.order_date,
@@ -718,6 +741,8 @@ def upsert_orders(rows):
                 gross_amount=excluded.gross_amount,
                 discount_amount=excluded.discount_amount,
                 net_amount=excluded.net_amount,
+                hb_discount_amount=excluded.hb_discount_amount,
+                merchant_discount_amount=excluded.merchant_discount_amount,
                 updated_at=datetime('now', 'localtime')
         """, rows)
 

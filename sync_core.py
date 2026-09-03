@@ -335,11 +335,15 @@ def fetch_unpackaged_hb_orders(start_dt, end_dt):
             placeholder_id = -abs(hash(order_number)) % (10 ** 9)
 
         gross = sum(_hb_money(ln.get("totalPrice")) or 0 for ln in lines)
-        discount = sum(
-            (_hb_money((ln.get("hbDiscount") or {}).get("totalPrice")) or 0)
-            + (_hb_money((ln.get("merchantDiscount") or {}).get("totalPrice")) or 0)
-            for ln in lines
-        )
+        # DÜZELTME (B3 - Faz 0 audit): burada da hb_discount_amount/
+        # merchant_discount_amount ayrı korunuyor (bkz. _hb_compute_order_totals
+        # docstring'i) -- bu yol farklı bir JSON şekli kullanıyor (nested
+        # hbDiscount/merchantDiscount dict'leri, packages endpoint'inin flat
+        # totalHBDiscount/totalMerchantDiscount'undan farklı), o yüzden ayrı
+        # ekstraksiyon.
+        hb_discount = sum((_hb_money((ln.get("hbDiscount") or {}).get("totalPrice")) or 0) for ln in lines)
+        merchant_discount = sum((_hb_money((ln.get("merchantDiscount") or {}).get("totalPrice")) or 0) for ln in lines)
+        discount = hb_discount + merchant_discount
         net = gross - discount
         first = lines[0]
 
@@ -354,6 +358,8 @@ def fetch_unpackaged_hb_orders(start_dt, end_dt):
             "gross_amount": gross,
             "discount_amount": discount,
             "net_amount": net,
+            "hb_discount_amount": hb_discount,
+            "merchant_discount_amount": merchant_discount,
         })
 
         for ln in lines:
@@ -608,6 +614,38 @@ def _hb_iso_to_epoch_ms(iso_str):
     return None
 
 
+def _hb_compute_order_totals(source_lines, package_total_price=None):
+    """DÜZELTME (B3 - Faz 0 audit): önceden totalHBDiscount (platformun
+    karşıladığı indirim) ve totalMerchantDiscount (satıcının kendi cebinden
+    karşıladığı indirim) TEK bir discount_amount'ta toplanıp ekonomik ayrım
+    kayboluyordu -- ikisi çok farklı finansal anlam taşır (biri satıcı
+    gideri, diğeri değil). Artık ikisi AYRI alanlar olarak da döner;
+    discount_amount toplam olarak KALMAYA devam eder (geriye dönük
+    uyumluluk, gross-net hesabı bozulmasın).
+
+    package_total_price: paket objesinin "totalPrice" alanı (varsa gross
+    ondan alınır); yoksa satır fiyatlarından (price/unitPrice * quantity)
+    yeniden hesaplanır -- eski davranışla birebir aynı (bkz. eski satır
+    içi kod)."""
+    gross = _hb_money(package_total_price)
+    if gross is None:
+        gross = sum((_hb_money(ln.get("price") or ln.get("unitPrice")) or 0) * (ln.get("quantity") or 1)
+                     for ln in source_lines)
+
+    hb_discount = sum(_hb_money(ln.get("totalHBDiscount")) or 0 for ln in source_lines)
+    merchant_discount = sum(_hb_money(ln.get("totalMerchantDiscount")) or 0 for ln in source_lines)
+    discount = hb_discount + merchant_discount
+    net = gross - discount
+
+    return {
+        "gross_amount": gross,
+        "hb_discount_amount": hb_discount,
+        "merchant_discount_amount": merchant_discount,
+        "discount_amount": discount,
+        "net_amount": net,
+    }
+
+
 def _hb_line_rows_for(package_id, obj):
     """Bir paket objesinden satır listesi üretir. Gerçek şemada kalemler
     her zaman paketin "items" alanında iç içe gelir (bkz. fetch_all_hb_packages)."""
@@ -692,13 +730,13 @@ def sync_hb_packages_to_db(start_dt, end_dt, progress_cb=None):
             gross = sum((_hb_money(ln.get("price") or ln.get("unitPrice")) or 0) * (ln.get("quantity") or 1)
                          for ln in source_lines)
 
-        # Paket seviyesinde ayrı bir indirim alanı yok — HB ve satıcı indirimleri
-        # her kalemin totalHBDiscount / totalMerchantDiscount alanında geliyor.
-        discount = sum(
-            (_hb_money(ln.get("totalHBDiscount")) or 0) + (_hb_money(ln.get("totalMerchantDiscount")) or 0)
-            for ln in source_lines
-        )
-        net = gross - discount
+        # DÜZELTME (B3 - Faz 0 audit): hb_discount_amount/merchant_discount_amount
+        # artık ayrı alanlar olarak da korunuyor -- bkz. _hb_compute_order_totals
+        # docstring'i. discount_amount toplam olarak aynı kalır.
+        _totals = _hb_compute_order_totals(source_lines, package_total_price=it.get("totalPrice"))
+        gross = _totals["gross_amount"]
+        discount = _totals["discount_amount"]
+        net = _totals["net_amount"]
 
         # orderNumber paket objesinin kendisinde değil, kalemlerin içinde geliyor.
         order_number = it.get("orderNumber")
@@ -716,6 +754,8 @@ def sync_hb_packages_to_db(start_dt, end_dt, progress_cb=None):
             "gross_amount": gross,
             "discount_amount": discount,
             "net_amount": net,
+            "hb_discount_amount": _totals["hb_discount_amount"],
+            "merchant_discount_amount": _totals["merchant_discount_amount"],
         })
 
     # --- 09.08.2026: henüz paketlenmemiş ("Paketlenecek") siparişleri de ekle ---
