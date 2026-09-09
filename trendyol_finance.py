@@ -233,8 +233,19 @@ def _cargo_item_to_row(item, invoice_serial_number):
 
     item_id = first("id", "invoiceItemId", "itemId")
     if item_id is None:
-        # Kararlı bir PK üretmek için invoice no + barkod/sipariş no birleşimi kullan
-        item_id = f"{invoice_serial_number}-{first('barcode', 'orderNumber', 'shipmentPackageId') or len(json.dumps(item))}"
+        # 09.09.2026 DÜZELTİLDİ: canlı ortamda KEŞFEDİLDİ — aynı orderNumber'a
+        # ait "Gönderi Kargo Bedeli" (gidiş) ve "İade Kargo Bedeli" (dönüş)
+        # kalemleri AYNI orderNumber'ı taşıyor; eskiden id sadece
+        # invoice+orderNumber'dan üretildiği için ikisi AYNI id'yi alıp
+        # upsert'te biri diğerinin ÜZERİNE YAZILIYORDU (kargo maliyeti
+        # sessizce kayboluyordu). API'nin verdiği 'parcelUniqueId' gerçekten
+        # benzersiz (gidiş/iade için farklı) -- önce onu dene.
+        parcel_id = first("parcelUniqueId")
+        if parcel_id is not None:
+            item_id = f"{invoice_serial_number}-{parcel_id}"
+        else:
+            # Kararlı bir PK üretmek için invoice no + barkod/sipariş no birleşimi kullan
+            item_id = f"{invoice_serial_number}-{first('barcode', 'orderNumber', 'shipmentPackageId') or len(json.dumps(item))}"
 
     return {
         "id": str(item_id),
