@@ -602,7 +602,13 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         cargo_total_for_order = cargo_by_order_number.get((ln["marketplace"], ln["order_number"]))
     cargo_missing_order = None
     if cargo_total_for_order is None:
-        cargo_line = 0.0
+        # B4 DÜZELTMESİ (09.09.2026): kargo faturası henüz senkron olmadıysa
+        # cargo_line'ı SESSİZCE 0.0 kabul edip profit'i gerçekmiş gibi
+        # hesaplamak SESSİZ VERİ UYDURMA'dır (bkz. proje ilkesi: "No silent
+        # data absence"). cargo=None kalır (0.0 DEĞİL) ve profit de (missingCost
+        # ile AYNI ilkeyle) aşağıda None'a düşürülür — bkz.
+        # test_missing_cargo_invoice_flags_profit_as_none_not_zero.
+        cargo_line = None
         cargo_missing = True
         cargo_missing_order = ln["order_number"]
     else:
@@ -630,9 +636,9 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         elif cogs is not None:
             vat_missing = True
 
-    profit = (net_hakedis - cogs - cargo_line) if cogs is not None else None
+    profit = (net_hakedis - cogs - cargo_line) if (cogs is not None and cargo_line is not None) else None
     profit_excl_vat = None
-    if cogs is not None and gross_revenue_excl_vat is not None and cogs_excl_vat is not None:
+    if cogs is not None and cargo_line is not None and gross_revenue_excl_vat is not None and cogs_excl_vat is not None:
         net_hakedis_excl_vat = gross_revenue_excl_vat - (commission + service_fee) / (1 + (_sku_vat_rate(cost_row, "sale") or 0))
         profit_excl_vat = net_hakedis_excl_vat - cogs_excl_vat - cargo_line
 
@@ -697,7 +703,7 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         "cogsReversal": cogs_reversal,
         "cogsReversalEstimated": cogs_reversal_estimated,
         "cogsReversalNote": cogs_reversal_note,
-        "cargo": round(cargo_line, 2),
+        "cargo": round(cargo_line, 2) if cargo_line is not None else None,
         "vatOnSale": round(vat_on_sale, 2) if vat_on_sale is not None else None,
         "vatOnCost": round(vat_on_cost, 2) if vat_on_cost is not None else None,
         "profit": round(profit, 2) if profit is not None else None,
@@ -855,7 +861,7 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
     total_net_hakedis = sum(r["netHakedis"] for r in line_results if r["netHakedis"] is not None)
     total_commission = sum(r["commission"] for r in line_results if r["commission"] is not None)
     total_service_fee = sum(r["serviceFee"] for r in line_results if r["serviceFee"] is not None)
-    total_cargo = sum(r["cargo"] for r in line_results)
+    total_cargo = sum(r["cargo"] or 0 for r in line_results)
     total_vat_on_sale = sum(r["vatOnSale"] for r in line_results if r["vatOnSale"] is not None)
     total_vat_on_cost = sum(r["vatOnCost"] for r in line_results if r["vatOnCost"] is not None)
     vat_payable = total_vat_on_sale - total_vat_on_cost

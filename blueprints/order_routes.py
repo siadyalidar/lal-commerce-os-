@@ -47,7 +47,8 @@ bp = Blueprint("order_routes", __name__)
 def _build_order_profit_map(start_dt, end_dt, marketplace_filter=None):
     summary = compute_profit_summary(start_dt=start_dt, end_dt=end_dt, marketplace_filter=marketplace_filter)
 
-    agg = defaultdict(lambda: {"profit": 0.0, "hasEstimatedSettlement": False, "hasMissingCost": False})
+    agg = defaultdict(lambda: {"profit": 0.0, "hasEstimatedSettlement": False,
+                                "hasMissingCost": False, "hasCargoMissing": False})
     for ln in summary["lines"]:
         order_number = ln.get("orderNumber")
         if not order_number:
@@ -56,6 +57,12 @@ def _build_order_profit_map(start_dt, end_dt, marketplace_filter=None):
         a = agg[key]
         if ln.get("missingCost"):
             a["hasMissingCost"] = True
+        # B4 DÜZELTMESİ (09.09.2026): kargo faturası eksikse (cargoMissing=True)
+        # finance_engine artık o satırın profit'ini None döndürüyor -- bu satır
+        # sessizce 0 katkı yapmış gibi ATLANMAMALI, sipariş toplamı da None
+        # olmalı (missingCost ile AYNI ilke, bkz. test_order_profit_map_none_when_cargo_missing).
+        elif ln.get("cargoMissing"):
+            a["hasCargoMissing"] = True
         elif ln.get("profit") is not None:
             a["profit"] += ln["profit"]
         if ln.get("estimated"):
@@ -64,7 +71,7 @@ def _build_order_profit_map(start_dt, end_dt, marketplace_filter=None):
     result = {}
     for key, a in agg.items():
         result[key] = {
-            "netProfit": None if a["hasMissingCost"] else round(a["profit"], 2),
+            "netProfit": None if (a["hasMissingCost"] or a["hasCargoMissing"]) else round(a["profit"], 2),
             "profitEstimated": a["hasEstimatedSettlement"],
         }
     return result

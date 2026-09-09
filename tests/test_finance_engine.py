@@ -204,8 +204,88 @@ def test_cargo_cost_hepsiburada_income_reduces_cost(db):
 
 
 # ============================================================
-# 4) payout_calendar: official verinin estimated/lagEstimated'ın yerine geçmesi
+# 3b) B4: Kargo maliyeti EKSİKSE profit SESSİZCE sıfırlanmamalı,
+#     provisional/None olarak işaretlenmeli (bkz. DEGISIKLIKLER.md B4)
 # ============================================================
+
+def test_missing_cargo_invoice_flags_profit_as_none_not_zero(db):
+    """KRİTİK: kargo faturası henüz senkron olmamışsa (cargo_costs'ta karşılığı
+    yoksa), önceki davranış cargo_line'ı SESSİZCE 0.0 kabul edip profit'i YİNE
+    DE gerçek bir sayı gibi hesaplıyordu (cargoMissing=True olsa bile). Doğrusu:
+    missingCost durumundaki gibi (bkz. test_cogs_reversal_missing_cost_not_fabricated
+    ile aynı ilke) profit UYDURULMAMALI, None kalmalı."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(320, "SKU-NOCARGO", 1, 100.0, 40.0, now_ms, "ONNC-CARGO1", cargo_amount=None)
+    upsert_settlements([
+        _settlement_row(id="nocargo-sale", barcode="SKU-NOCARGO", shipment_package_id=320,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONNC-CARGO1", transaction_date=now_ms),
+    ])
+    # DİKKAT: upsert_cargo_costs HİÇ çağrılmadı -> bu sipariş için kargo faturası yok.
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+    assert line["cargoMissing"] is True
+    assert line["cargo"] is None  # 0.0 DEĞİL — uydurulmamalı
+    assert line["profit"] is None  # kargo bilinmeden kâr UYDURULMAMALI
+    assert line["profitExclVat"] is None
+    # Bu satır toplam kâra hiç karışmamalı (None -> filtrelenir)
+    assert summary["totals"]["grossProfit"] == pytest.approx(0.0)
+
+
+def test_cargo_present_computes_profit_normally(db):
+    """Kontrol testi: kargo faturası VARSA davranış değişmemeli, profit normal
+    şekilde hesaplanmaya devam etmeli."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(321, "SKU-CARGO-OK", 1, 100.0, 40.0, now_ms, "ONCARGOOK1", cargo_amount=None)
+    upsert_settlements([
+        _settlement_row(id="cargook-sale", barcode="SKU-CARGO-OK", shipment_package_id=321,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONCARGOOK1", transaction_date=now_ms),
+    ])
+    upsert_cargo_costs([
+        {"id": "c-ok1", "marketplace": "trendyol", "invoice_serial_number": "INV-OK1",
+         "shipment_package_id": 321, "order_number": "ONCARGOOK1", "barcode": "SKU-CARGO-OK",
+         "amount": 20.0, "raw_json": None},
+    ])
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+    assert line["cargoMissing"] is False
+    assert line["cargo"] == pytest.approx(20.0)
+    # profit = net_hakedis(100-10) - cogs(40) - cargo(20) = 30
+    assert line["profit"] == pytest.approx(30.0)
+
+
+def test_missing_cargo_does_not_crash_totals_aggregation(db):
+    """total_cargo/grossProfit toplamları, cargo=None satırlarıyla birlikte
+    hata vermeden (TypeError vs.) hesaplanabilmeli."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(322, "SKU-MIX1", 1, 100.0, 40.0, now_ms, "ONMIX1", cargo_amount=None)
+    upsert_settlements([
+        _settlement_row(id="mix1-sale", barcode="SKU-MIX1", shipment_package_id=322,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONMIX1", transaction_date=now_ms),
+    ])
+    _setup_line(323, "SKU-MIX2", 1, 100.0, 40.0, now_ms, "ONMIX2", cargo_amount=None)
+    upsert_settlements([
+        _settlement_row(id="mix2-sale", barcode="SKU-MIX2", shipment_package_id=323,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONMIX2", transaction_date=now_ms),
+    ])
+    upsert_cargo_costs([
+        {"id": "c-mix2", "marketplace": "trendyol", "invoice_serial_number": "INV-MIX2",
+         "shipment_package_id": 323, "order_number": "ONMIX2", "barcode": "SKU-MIX2",
+         "amount": 15.0, "raw_json": None},
+    ])
+    # ONMIX1 icin kargo yok, ONMIX2 icin var.
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    # 322: cargo eksik -> profit None. 323: profit = (100-10)-40-15 = 35
+    assert summary["totals"]["grossProfit"] == pytest.approx(35.0)
+    assert summary["totals"]["cargoTotal"] == pytest.approx(15.0)
+    assert summary["data_quality"]["orders_missing_cargo_invoice"] == 1
+
 
 def test_payout_calendar_official_overrides_estimated(db, monkeypatch):
     future_dt = datetime.now() + timedelta(days=10)
@@ -279,6 +359,11 @@ def test_profit_summary_vat_calculation(db):
         "sale_price_incl_vat": 120.0, "sale_price_excl_vat": 100.0,
         "cost_incl_vat": 55.0, "cost_excl_vat": 50.0,
     }])
+    upsert_cargo_costs([  # B4: profit hesaplanabilmesi için kargo faturası bilinen olmalı (0 TL)
+        {"id": "cargo-vat1", "marketplace": "trendyol", "invoice_serial_number": "INV-VAT1",
+         "shipment_package_id": 100, "order_number": "ONV1", "barcode": "SKU-VAT",
+         "amount": 0.0, "raw_json": None},
+    ])
 
     summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
     line = summary["lines"][0]
@@ -300,8 +385,12 @@ def test_profit_summary_vat_calculation(db):
 # ============================================================
 
 def _setup_line(spid, sku, quantity, unit_price, cost_incl_vat, now_ms,
-                 order_number, marketplace="trendyol"):
-    """Ortak kurulum: bir sipariş + satırı + ürün maliyeti."""
+                 order_number, marketplace="trendyol", cargo_amount=0.0):
+    """Ortak kurulum: bir sipariş + satırı + ürün maliyeti (+ varsayılan olarak
+    BİLİNEN bir kargo maliyeti, B4 düzeltmesinden sonra profit'in
+    None'a düşmemesi için — bkz. finance_engine.py _build_line_result).
+    cargo_amount=None verilirse kargo faturası HİÇ oluşturulmaz (kargo
+    EKSİK senaryosunu test etmek için, bkz. B4 testleri)."""
     upsert_orders([{
         "shipment_package_id": spid, "marketplace": marketplace, "order_number": order_number,
         "order_date": now_ms, "status": "Delivered", "customer": "Test",
@@ -318,6 +407,14 @@ def _setup_line(spid, sku, quantity, unit_price, cost_incl_vat, now_ms,
             "sku": sku, "product_name": f"Ürün {sku}",
             "sale_price_incl_vat": unit_price, "sale_price_excl_vat": unit_price / 1.2,
             "cost_incl_vat": cost_incl_vat, "cost_excl_vat": cost_incl_vat / 1.1,
+        }])
+    if cargo_amount is not None:
+        cargo_raw_amount = cargo_amount if marketplace == "trendyol" else -cargo_amount
+        upsert_cargo_costs([{
+            "id": f"cargo-auto-{spid}", "marketplace": marketplace,
+            "invoice_serial_number": f"INV-AUTO-{spid}", "shipment_package_id": spid,
+            "order_number": order_number, "barcode": sku,
+            "amount": cargo_raw_amount, "raw_json": None,
         }])
 
 
