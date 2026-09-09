@@ -205,6 +205,7 @@ def _load_settlement_lines(conn, start_ms=None, end_ms=None):
     totals = defaultdict(lambda: {
         "gross_revenue": 0.0, "commission": 0.0, "service_fee": 0.0,
         "return_amount": 0.0, "return_count": 0, "order_number": None, "min_date": None,
+        "return_date": None,
     })
     for r in rows:
         spid = r["shipment_package_id"]
@@ -241,6 +242,12 @@ def _load_settlement_lines(conn, start_ms=None, end_ms=None):
         elif cat == "return":
             t["return_amount"] += (r["debt"] or 0.0) - (r["credit"] or 0.0)
             t["return_count"] += 1
+            # İadenin GERÇEKTEN hangi tarihte işlendiğini ayrı tutuyoruz (satışın
+            # min_date'iyle KARIŞTIRILMAMALI) — grafiklerin (daily/monthly) iadeyi
+            # satışın değil, iadenin kendi periyoduna yazabilmesi için gerekli.
+            rd = r["transaction_date"]
+            if rd:
+                t["return_date"] = rd if t["return_date"] is None else min(t["return_date"], rd)
 
         if r["order_number"] and not t["order_number"]:
             t["order_number"] = r["order_number"]
@@ -636,8 +643,11 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
     # kalem olarak eklenir, return_amount'un overhead'de zaten düşülüyor
     # olmasıyla ÇAKIŞMAZ (iki farklı, birbirinden bağımsız düzeltme).
     return_amount = 0.0
+    return_date = None
     if settlement_totals_in_range is not None:
-        return_amount = (settlement_totals_in_range.get(key) or {}).get("return_amount", 0.0) or 0.0
+        _rng = settlement_totals_in_range.get(key) or {}
+        return_amount = _rng.get("return_amount", 0.0) or 0.0
+        return_date = _rng.get("return_date")
 
     net_revenue = None
     if gross_revenue is not None:
@@ -674,6 +684,9 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         "quantity": ln["quantity"],
         "grossRevenue": round(gross_revenue, 2) if gross_revenue is not None else None,
         "returnAmount": round(return_amount, 2),
+        # İadenin GERÇEK transaction_date'i — orderDate ile KARIŞTIRILMAMALI.
+        # Grafiklerde (daily/monthly) iadenin doğru periyoda düşmesi için kullanılır.
+        "returnDate": return_date,
         "netRevenue": round(net_revenue, 2) if net_revenue is not None else None,
         "revenueExclVat": round(gross_revenue_excl_vat, 2) if gross_revenue_excl_vat is not None else None,
         "commission": round(commission, 2) if commission is not None else None,
@@ -928,11 +941,24 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
         m["netHakedis"] += ln["netHakedis"] or 0
         if ln["profit"] is not None:
             m["grossProfit"] += ln["profit"]
-        # 21.08.2026: cogsReversal de aya dağıtılıyor (return_amount zaten
-        # overhead üzerinden ayrı hesaplanıyor, bkz. bu fonksiyonun docstring'i
-        # — dönemsel giderler burada aya tam dağıtılmıyor, bu bilinen/dokümante
-        # edilmiş bir basitleştirme; kesin rakam her zaman compute_profit_summary).
-        m["grossProfit"] += ln.get("cogsReversal") or 0
+
+        # 09.09.2026 DÜZELTİLDİ (önceki hata): iade, satışın ayına DEĞİL,
+        # kendi transaction_date'inin düştüğü aya yazılmalı (bkz.
+        # test_monthly_profit_attributes_return_to_return_month_not_sale_month).
+        # ESKİ DAVRANIŞ HATALIYDI: return_amount hiç düşülmüyordu, sadece
+        # cogsReversal tek taraflı EKLENİYORDU — bu net etkiyi TERSİNE
+        # çeviriyor, iade olduğunda kâr aslında yükseliyormuş gibi
+        # görünebiliyordu. Doğrusu: o ayın cirosundan return_amount düşülür,
+        # kârından da (return_amount - cogsReversal) düşülür (cogsReversal
+        # geri kazanılan maliyet olduğu için kısmen telafi eder).
+        return_amount = ln.get("returnAmount") or 0
+        if return_amount:
+            return_date = ln.get("returnDate") or d
+            return_month_key = datetime.fromtimestamp(return_date / 1000).strftime("%Y-%m")
+            rm = by_month[return_month_key]
+            cogs_reversal = ln.get("cogsReversal") or 0
+            rm["grossRevenue"] -= return_amount
+            rm["grossProfit"] -= (return_amount - cogs_reversal)
 
     # NOT: Bu basitleştirilmiş aylık kırılım, dönemsel giderleri (stopaj,
     # platform hizmet bedeli, iade) SATIR TARİHİNE göre değil sipariş

@@ -60,6 +60,22 @@ def reports_overview():
             item["profit"] += line["profit"]
             item["profitLines"] += 1
 
+        # 09.09.2026 DÜZELTİLDİ: iade, satışın gününe DEĞİL kendi
+        # transaction_date'inin düştüğü güne yazılmalı (bkz.
+        # test_reports_overview_daily_chart_reflects_return_in_return_month).
+        # ESKİ DAVRANIŞ HATALIYDI: grafik sadece grossRevenue/line-profit
+        # topluyordu, returnAmount/cogsReversal HİÇ kullanılmıyordu — bu
+        # yüzden iade kabul edilse de grafik asla düşmüyordu.
+        return_amount = line.get("returnAmount") or 0
+        if return_amount:
+            return_date = line.get("returnDate") or order_date
+            return_day = datetime.fromtimestamp(return_date / 1000).strftime("%Y-%m-%d")
+            r_item = daily[return_day]
+            cogs_reversal = line.get("cogsReversal") or 0
+            r_item["revenue"] -= return_amount
+            r_item["profit"] -= (return_amount - cogs_reversal)
+            r_item["profitLines"] += 1
+
     daily_rows = [
         {
             "date": day,

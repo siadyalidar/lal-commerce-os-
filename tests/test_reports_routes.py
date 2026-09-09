@@ -18,6 +18,8 @@ Kapsam:
 import csv
 import io
 
+import pytest
+
 from tests.conftest import auth_headers
 
 
@@ -57,6 +59,67 @@ def test_reports_overview_shape(client):
     assert "daily" in data
     assert "products" in data
     assert "stock" in data
+
+
+def test_reports_overview_daily_chart_reflects_return_in_return_month(client):
+    """KRİTİK REGRESYON: bir sipariş Temmuz'da satılıp Eylül'de iade edilmişse,
+    /api/reports/overview'un 'daily' kırılımında EYLÜL günü negatif etkilenmeli
+    (ciro/kâr düşmeli) — önceki davranışta 'daily' iadeyi HİÇ hesaba katmıyordu
+    (sadece grossRevenue/line-profit toplanıyordu, returnAmount/cogsReversal
+    hiç kullanılmıyordu)."""
+    from datetime import datetime
+
+    from database import upsert_orders, upsert_order_lines, upsert_product_costs, upsert_settlements
+
+    sale_dt = datetime(2026, 7, 2, 9, 0, 0)
+    return_dt = datetime(2026, 9, 4, 5, 0, 0)
+    sale_ms = int(sale_dt.timestamp() * 1000)
+    return_ms = int(return_dt.timestamp() * 1000)
+
+    upsert_orders([{
+        "shipment_package_id": 900, "marketplace": "trendyol", "order_number": "ONDAILY1",
+        "order_date": sale_ms, "status": "Returned", "customer": "Test",
+        "cargo_provider": "Aras", "gross_amount": 700.0, "discount_amount": 0.0, "net_amount": 700.0,
+    }])
+    upsert_order_lines([{
+        "shipment_package_id": 900, "marketplace": "trendyol", "barcode": "SKU-DAILY1",
+        "merchant_sku": "SKU-DAILY1", "product_name": "Ürün", "quantity": 1,
+        "line_unit_price": 700.0, "commission_rate": 10.0,
+    }])
+    upsert_product_costs([{
+        "sku": "SKU-DAILY1", "product_name": "Ürün",
+        "sale_price_incl_vat": 700.0, "sale_price_excl_vat": 700.0 / 1.2,
+        "cost_incl_vat": 300.0, "cost_excl_vat": 300.0 / 1.1,
+    }])
+    upsert_settlements([
+        {"id": "daily-sale", "marketplace": "trendyol", "transaction_date": sale_ms,
+         "barcode": "SKU-DAILY1", "transaction_type": "Sale", "raw_transaction_type": "Satış",
+         "receipt_id": None, "description": None, "debt": None, "credit": 700.0,
+         "payment_period": None, "commission_rate": None, "commission_amount": 70.0,
+         "seller_revenue": 630.0, "order_number": "ONDAILY1", "payment_order_id": None,
+         "payment_date": None, "shipment_package_id": 900},
+        {"id": "daily-ret", "marketplace": "trendyol", "transaction_date": return_ms,
+         "barcode": "SKU-DAILY1", "transaction_type": "Return", "raw_transaction_type": "İade",
+         "receipt_id": None, "description": None, "debt": 700.0, "credit": 0.0,
+         "payment_period": None, "commission_rate": None, "commission_amount": None,
+         "seller_revenue": None, "order_number": "ONDAILY1", "payment_order_id": None,
+         "payment_date": None, "shipment_package_id": 900},
+    ])
+
+    resp = client.get(
+        "/api/reports/overview?full_history=true&marketplace=trendyol",
+        headers=auth_headers(),
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    daily_by_date = {row["date"]: row for row in data["daily"]}
+
+    assert "2026-09-04" in daily_by_date, "iade günü grafikte hiç görünmüyor"
+    assert daily_by_date["2026-09-04"]["revenue"] < 0, "iade günü ciro düşmeli (negatif etki)"
+    assert daily_by_date["2026-09-04"]["profit"] < 0, "iade günü kâr düşmeli (negatif etki)"
+
+    # Temmuz'un satış günü hâlâ tam olarak görünmeli (iadeden etkilenmemeli)
+    assert daily_by_date["2026-07-02"]["revenue"] == pytest.approx(700.0)
 
 
 def test_reports_export_requires_auth(client):

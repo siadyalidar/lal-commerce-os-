@@ -454,6 +454,77 @@ def test_cogs_reversal_return_on_different_transaction_date_than_sale(db):
     assert line["cogsReversal"] == pytest.approx(40.0)
 
 
+def test_line_result_carries_return_transaction_date(db):
+    """Raporlardaki grafiklerin (günlük/aylık kırılım) iadeyi DOĞRU periyoda
+    (satışın değil, iadenin transaction_date'ine) yansıtabilmesi için satır
+    sonucunda ayrı bir 'returnDate' alanı taşınmalı — 'orderDate' ile
+    KARIŞTIRILMAMALI (bkz. bir üstteki test)."""
+    now = datetime.now()
+    sale_ms = int((now - timedelta(days=5)).timestamp() * 1000)
+    return_ms = int(now.timestamp() * 1000)
+    _setup_line(308, "SKU-RDATE", 1, 100.0, 40.0, sale_ms, "ONRD1")
+    upsert_settlements([
+        _settlement_row(id="rd-sale", barcode="SKU-RDATE", shipment_package_id=308,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONRD1", transaction_date=sale_ms),
+        _settlement_row(id="rd-ret", barcode="SKU-RDATE", shipment_package_id=308,
+                         raw_transaction_type="İade", transaction_type="Return",
+                         debt=100.0, credit=0.0, order_number="ONRD1", transaction_date=return_ms),
+    ])
+
+    summary = fe.compute_profit_summary(days=7, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+    assert line["returnDate"] == return_ms
+
+
+def test_line_result_return_date_none_when_no_return(db):
+    """İade yoksa returnDate None kalmalı (uydurulmamalı)."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(309, "SKU-NORET", 1, 100.0, 40.0, now_ms, "ONNORET1")
+    upsert_settlements([
+        _settlement_row(id="noret-sale", barcode="SKU-NORET", shipment_package_id=309,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONNORET1", transaction_date=now_ms),
+    ])
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+    assert line["returnDate"] is None
+
+
+def test_monthly_profit_attributes_return_to_return_month_not_sale_month(db):
+    """KRİTİK: bir sipariş Temmuz'da satılıp Eylül'de iade edilmişse, iadenin
+    ciro/kâr düşüşü EYLÜL ayında görünmeli — Temmuz'un rakamları iade
+    olmamış gibi kalmalı. Önceki davranış: monthly_profit() iadeyi hiç
+    dikkate almıyordu (return_amount hiç düşülmüyordu, sadece cogsReversal
+    -yanlışlıkla tek taraflı- ekleniyordu)."""
+    sale_dt = datetime(2026, 7, 2, 9, 0, 0)
+    return_dt = datetime(2026, 9, 4, 5, 0, 0)
+    sale_ms = int(sale_dt.timestamp() * 1000)
+    return_ms = int(return_dt.timestamp() * 1000)
+    _setup_line(310, "SKU-MP1", 1, 700.0, 300.0, sale_ms, "ONMP1")
+    upsert_settlements([
+        _settlement_row(id="mp-sale", barcode="SKU-MP1", shipment_package_id=310,
+                         raw_transaction_type="Satış", credit=700.0, commission_amount=70.0,
+                         seller_revenue=630.0, order_number="ONMP1", transaction_date=sale_ms),
+        _settlement_row(id="mp-ret", barcode="SKU-MP1", shipment_package_id=310,
+                         raw_transaction_type="İade", transaction_type="Return",
+                         debt=700.0, credit=0.0, order_number="ONMP1", transaction_date=return_ms),
+    ])
+
+    months = fe.monthly_profit(start_dt=datetime(2026, 7, 1), end_dt=datetime(2026, 9, 30),
+                                marketplace_filter="trendyol")
+    by_month = {m["month"]: m for m in months}
+
+    # Temmuz: satış hâlâ tam olarak görünmeli (iade Temmuz'u etkilememeli)
+    # profit = net_hakedis(700-70 komisyon) - cogs(300) - kargo(0) = 330
+    assert by_month["2026-07"]["revenue"] == pytest.approx(700.0)
+    assert by_month["2026-07"]["grossProfit"] == pytest.approx(330.0)
+
+    # Eylül: iade burada düşmeli -> net ciro 0, kâr da geri alınan maliyet kadar (300) negatife dönmeli
+    assert by_month["2026-09"]["revenue"] == pytest.approx(-700.0)
+    assert by_month["2026-09"]["grossProfit"] == pytest.approx(-400.0)
+
+
 def test_cogs_reversal_missing_cost_not_fabricated(db):
     """Maliyet bilinmiyorsa (product_costs'ta yok), gerçek bir iade olsa bile
     COGS reversal UYDURULMAMALI (None kalmalı)."""
