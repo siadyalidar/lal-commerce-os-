@@ -11,7 +11,7 @@ from datetime import timedelta
 
 from dotenv import load_dotenv
 
-from http_client import get_json_with_retry
+from http_client import get_json_with_retry, post_json_with_retry
 
 load_dotenv()
 
@@ -50,6 +50,17 @@ def trendyol_get(path, params=None, max_retries=5, throttle_seconds=0.35):
     """
     return get_json_with_retry(
         f"{BASE_URL}{path}", params=params, headers={"User-Agent": USER_AGENT},
+        auth=(API_KEY, API_SECRET), timeout=30, max_retries=max_retries,
+        throttle_seconds=throttle_seconds, backoff_mode="exponential", backoff_base_seconds=3,
+    )
+
+
+def trendyol_post(path, json_body=None, max_retries=5, throttle_seconds=0.35):
+    """Trendyol API'ye POST isteği atar. trendyol_get ile aynı auth/retry
+    mantığı (bkz. post_json_with_retry) -- tek fark, bazı servisler (örn.
+    createCommonLabel) 200 dönüp gövde göndermez, bu durumda None döner."""
+    return post_json_with_retry(
+        f"{BASE_URL}{path}", json_body=json_body, headers={"User-Agent": USER_AGENT},
         auth=(API_KEY, API_SECRET), timeout=30, max_retries=max_retries,
         throttle_seconds=throttle_seconds, backoff_mode="exponential", backoff_base_seconds=3,
     )

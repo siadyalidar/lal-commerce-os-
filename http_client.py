@@ -69,3 +69,52 @@ def get_json_with_retry(
 
     resp.raise_for_status()
     return resp.json()
+
+
+def post_json_with_retry(
+    url,
+    json_body=None,
+    params=None,
+    headers=None,
+    auth=None,
+    timeout=30,
+    max_retries=5,
+    throttle_seconds=0.0,
+    backoff_mode="exponential",
+    backoff_base_seconds=3,
+    retry_wait_header=None,
+):
+    """POST isteği atar, aynı 429 retry/backoff mantığını get_json_with_retry
+    ile paylaşır. get_json_with_retry'den TEK farkı: bazı servisler (örn.
+    Trendyol createCommonLabel) başarı durumunda 200 dönüp GÖVDE GÖNDERMEZ
+    ("Success - No response body") -- bu durumda resp.json() ValueError
+    fırlatır, biz bunu hataya çevirmek yerine None döneriz (boş gövde bu
+    servisler için BAŞARI anlamına gelir, eksik veri değil)."""
+    resp = None
+    attempt = 0
+    while max_retries is None or attempt < max_retries:
+        resp = requests.post(url, params=params, json=json_body, headers=headers, auth=auth, timeout=timeout)
+        if resp.status_code == 429:
+            if backoff_mode == "fixed":
+                wait = backoff_base_seconds
+            elif backoff_mode == "header_or_linear":
+                default_wait = backoff_base_seconds * (attempt + 1)
+                wait = int(resp.headers.get(retry_wait_header, default_wait)) if retry_wait_header else default_wait
+            else:
+                wait = backoff_base_seconds * (2 ** attempt)
+            time.sleep(wait)
+            attempt += 1
+            continue
+        resp.raise_for_status()
+        if throttle_seconds:
+            time.sleep(throttle_seconds)
+        try:
+            return resp.json()
+        except ValueError:
+            return None
+
+    resp.raise_for_status()
+    try:
+        return resp.json()
+    except ValueError:
+        return None

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from http_client import get_json_with_retry
+from http_client import get_json_with_retry, post_json_with_retry
 
 
 def _resp(status_code, json_data=None, headers=None):
@@ -83,3 +83,51 @@ def test_throttle_seconds_applied_after_success(mock_get, mock_sleep):
     mock_get.side_effect = [_resp(200, {"ok": True})]
     get_json_with_retry("http://x", throttle_seconds=0.5, max_retries=1)
     mock_sleep.assert_called_once_with(0.5)
+
+
+# ============================================================
+# post_json_with_retry -- kargo etiketi entegrasyonu (Trendyol createCommonLabel
+# 200 dönerken body GÖNDERMİYOR, bu yüzden ayrı bir POST fonksiyonu gerekiyor).
+# ============================================================
+
+def _post_resp(status_code, json_data=None, headers=None, raises_on_json=False):
+    m = MagicMock()
+    m.status_code = status_code
+    if raises_on_json:
+        m.json.side_effect = ValueError("No JSON object could be decoded")
+    else:
+        m.json.return_value = json_data if json_data is not None else {}
+    m.headers = headers or {}
+    m.raise_for_status.return_value = None
+    return m
+
+
+@patch("http_client.time.sleep", return_value=None)
+@patch("http_client.requests.post")
+def test_post_json_with_retry_returns_parsed_json_body(mock_post, mock_sleep):
+    mock_post.return_value = _post_resp(200, {"data": [{"label": "^XA...^XZ", "format": "ZPL"}]})
+    result = post_json_with_retry("http://x", json_body={"format": "ZPL"}, max_retries=3)
+    assert result == {"data": [{"label": "^XA...^XZ", "format": "ZPL"}]}
+
+
+@patch("http_client.time.sleep", return_value=None)
+@patch("http_client.requests.post")
+def test_post_json_with_retry_returns_none_when_body_empty(mock_post, mock_sleep):
+    """Trendyol createCommonLabel: 'Success - No response body' (200, boş gövde).
+    resp.json() burada ValueError fırlatır -- exception yükseltmek yerine None
+    dönmeli, çünkü bu servis için boş gövde BEKLENEN/başarılı sonuçtur."""
+    mock_post.return_value = _post_resp(200, raises_on_json=True)
+    result = post_json_with_retry("http://x", json_body={"format": "ZPL"}, max_retries=3)
+    assert result is None
+
+
+@patch("http_client.time.sleep", return_value=None)
+@patch("http_client.requests.post")
+def test_post_json_with_retry_retries_on_429(mock_post, mock_sleep):
+    mock_post.side_effect = [_post_resp(429), _post_resp(200, {"ok": True})]
+    result = post_json_with_retry(
+        "http://x", json_body={}, max_retries=3,
+        backoff_mode="exponential", backoff_base_seconds=3,
+    )
+    assert result == {"ok": True}
+    mock_sleep.assert_called_once_with(3)

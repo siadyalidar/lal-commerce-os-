@@ -1441,6 +1441,12 @@ def sync_orders_to_db(start_dt, end_dt, progress_cb=None):
             "gross_amount": o.get("packageGrossAmount"),
             "discount_amount": o.get("packageTotalDiscount"),
             "net_amount": o.get("packageTotalPrice"),
+            # Kargo etiketi entegrasyonu (12.09.2026): createCommonLabel/
+            # getCommonLabel servisleri shipmentPackageId değil bu alanla
+            # çalışıyor. Henüz kargoya verilmemiş (Created/Awaiting)
+            # siparişlerde API bu alanı hiç göndermeyebilir -- None kalır,
+            # UYDURULMAZ.
+            "cargo_tracking_number": o.get("cargoTrackingNumber"),
         })
         for line in o.get("lines", []):
             line_rows.append({

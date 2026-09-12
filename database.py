@@ -331,12 +331,45 @@ def _migrate_hb_discount_breakdown(conn):
     _ensure_column(conn, "orders", "merchant_discount_amount", "REAL")
 
 
+def _migrate_cargo_labels(conn):
+    """Kargo etiketi (barkod) entegrasyonu için iki değişiklik (12.09.2026):
+
+    1) orders.cargo_tracking_number: Trendyol'un createCommonLabel/
+       getCommonLabel servisleri shipmentPackageId değil cargoTrackingNumber
+       ile çalışıyor. Bu alan getShipmentPackages ham yanıtında zaten
+       geliyordu ama sync_orders_to_db() şimdiye kadar hiç saklamıyordu.
+       Sadece BUNDAN SONRAKİ senkronlarda dolacak -- geçmiş siparişler için
+       veri UYDURULMAZ, NULL kalır (gerekirse ayrı bir backfill script'i
+       yazılır).
+
+    2) cargo_labels: Etiket üretimi (özellikle Trendyol createCommonLabel)
+       her çağrıldığında kargo firması nezdinde yan etkiye yol açabilir
+       (ör. tekrar tekrar barkod talebi). Bu yüzden başarıyla alınan her
+       etiket burada önbelleğe yazılır; "tekrar yazdır" istekleri (tekli
+       veya toplu) API'yi tekrar çağırmadan önce önce buraya bakar.
+       marketplace+shipment_package_id birleşik anahtarı diğer tablolarla
+       aynı deseni (marketplace-namespaced composite key) izler."""
+    _ensure_column(conn, "orders", "cargo_tracking_number", "TEXT")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cargo_labels (
+            marketplace TEXT NOT NULL,
+            shipment_package_id INTEGER NOT NULL,
+            cargo_tracking_number TEXT,
+            label_format TEXT NOT NULL,
+            label_data TEXT NOT NULL,
+            fetched_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (marketplace, shipment_package_id)
+        )
+    """)
+
+
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
     ("2026_08_09_growth_columns", _migrate_growth_columns),
     ("2026_08_11_supplier_debt_v2", _migrate_supplier_debt_v2),
     ("2026_08_24_review_first_synced_at", _migrate_review_first_synced_at),
     ("2026_09_03_hb_discount_breakdown", _migrate_hb_discount_breakdown),
+    ("2026_09_12_cargo_labels", _migrate_cargo_labels),
 ]
 
 def init_db():
@@ -724,14 +757,15 @@ def upsert_orders(rows):
     for r in rows:
         r.setdefault("hb_discount_amount", None)
         r.setdefault("merchant_discount_amount", None)
+        r.setdefault("cargo_tracking_number", None)
     with get_connection() as conn:
         conn.executemany("""
             INSERT INTO orders (shipment_package_id, marketplace, order_number, order_date, status,
                                  customer, cargo_provider, gross_amount, discount_amount, net_amount,
-                                 hb_discount_amount, merchant_discount_amount)
+                                 hb_discount_amount, merchant_discount_amount, cargo_tracking_number)
             VALUES (:shipment_package_id, :marketplace, :order_number, :order_date, :status,
                     :customer, :cargo_provider, :gross_amount, :discount_amount, :net_amount,
-                    :hb_discount_amount, :merchant_discount_amount)
+                    :hb_discount_amount, :merchant_discount_amount, :cargo_tracking_number)
             ON CONFLICT(marketplace, shipment_package_id) DO UPDATE SET
                 order_number=excluded.order_number,
                 order_date=excluded.order_date,
@@ -743,8 +777,56 @@ def upsert_orders(rows):
                 net_amount=excluded.net_amount,
                 hb_discount_amount=excluded.hb_discount_amount,
                 merchant_discount_amount=excluded.merchant_discount_amount,
+                -- cargoTrackingNumber siparişin hayat döngüsünde SONRADAN atanır
+                -- (Created/Picking aşamasında henüz yok); bu yüzden yeni değer
+                -- NULL geldiyse eskisini SİLMİYORUZ (COALESCE) -- aksi halde her
+                -- ara senkronda dolu değeri boşla ezme riski olurdu.
+                cargo_tracking_number=COALESCE(excluded.cargo_tracking_number, cargo_tracking_number),
                 updated_at=datetime('now', 'localtime')
         """, rows)
+
+
+def get_order_for_label(marketplace, shipment_package_id):
+    """Kargo etiketi orkestrasyonu (cargo_label_service.py) için: bir
+    siparişin statüsünü ve (varsa) cargo_tracking_number'ını okur. Hem
+    tekli hem toplu etiket akışı AYNI fonksiyonu kullanır -- tek fark
+    servis katmanında kaç kez çağrıldığı."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT status, cargo_tracking_number FROM orders "
+            "WHERE marketplace = ? AND shipment_package_id = ?",
+            (marketplace, shipment_package_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_cached_cargo_label(marketplace, shipment_package_id):
+    """Daha önce başarıyla alınmış bir etiket var mı? Varsa cargo_label_service
+    Trendyol/HB API'sini TEKRAR ÇAĞIRMAZ -- idempotency (Sidar'ın açık talebi:
+    createCommonLabel'ın tekrar tekrar çağrılması yan etki riski taşıyor)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT label_format, label_data, cargo_tracking_number, fetched_at "
+            "FROM cargo_labels WHERE marketplace = ? AND shipment_package_id = ?",
+            (marketplace, shipment_package_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_cargo_label(marketplace, shipment_package_id, cargo_tracking_number, label_format, label_data):
+    """Alınan etiketi önbelleğe yazar (upsert, idempotent). force_refresh
+    ile yeniden istenen etiketler burada üzerine yazılır."""
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO cargo_labels
+                (marketplace, shipment_package_id, cargo_tracking_number, label_format, label_data, fetched_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
+            ON CONFLICT(marketplace, shipment_package_id) DO UPDATE SET
+                cargo_tracking_number=excluded.cargo_tracking_number,
+                label_format=excluded.label_format,
+                label_data=excluded.label_data,
+                fetched_at=excluded.fetched_at
+        """, (marketplace, shipment_package_id, cargo_tracking_number, label_format, label_data))
 
 
 # Bu durumlarda sipariş iptal/iade olmuş sayılır, borç hareketi YAZILMAZ.
