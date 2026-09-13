@@ -20,9 +20,10 @@ CONFIRMED (12.09.2026 Faz 0, resmi dokümantasyondan):
     doğrulanacak (bkz. hb_fetch_package_labels docstring'i).
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from cargo_label_client import (
     HepsiburadaLabelError,
@@ -112,6 +113,21 @@ def test_hb_fetch_package_labels_raises_on_empty_response(mock_get, monkeypatch)
     import sync_core
     monkeypatch.setattr(sync_core, "HB_MERCHANT_ID", "TESTMERCHANT")
     mock_get.return_value = None
+
+    with pytest.raises(HepsiburadaLabelError):
+        hb_fetch_package_labels("PKG123")
+
+
+@patch("cargo_label_client.hepsiburada_get")
+def test_hb_fetch_package_labels_translates_http_404_to_domain_error(mock_get, monkeypatch):
+    """Canlı testte (12.09.2026) görüldü: paket henüz oluşturulmamışsa HB
+    404 döner. requests.exceptions.HTTPError ham haliyle sızmamalı --
+    çağıran katmanın (service) diğer hatalarla aynı şekilde ele alabilmesi
+    için HepsiburadaLabelError'a çevrilmeli."""
+    import sync_core
+    monkeypatch.setattr(sync_core, "HB_MERCHANT_ID", "TESTMERCHANT")
+    fake_response = MagicMock(status_code=404)
+    mock_get.side_effect = requests.exceptions.HTTPError("404 Client Error", response=fake_response)
 
     with pytest.raises(HepsiburadaLabelError):
         hb_fetch_package_labels("PKG123")

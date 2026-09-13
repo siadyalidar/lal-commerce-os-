@@ -148,6 +148,20 @@ def test_hb_api_error_is_reported_without_crashing(mock_hb, db):
     assert "hb_api_error" in results[0]["reason"]
 
 
+def test_hb_placeholder_shipment_package_id_returns_error_without_calling_api(db):
+    """sync_core.py'de HB henüz packageNumber atamadığı siparişler için
+    negatif bir placeholder_id (-abs(order_number)) kullanılıyor (bkz.
+    sync_core.py satır ~333, status genelde 'AwaitingPackage'). Bu durumda
+    gerçek bir paket/etiket YOKTUR -- API'ye hiç gidilmeden anlamlı bir
+    hata dönmeli (Trendyol'daki status_not_ready kontrolüne paralel).
+    Canlı testte (12.09.2026) bu senaryo gerçek bir 404 ile doğrulandı."""
+    with patch("cargo_label_service.hb_fetch_package_labels") as mock_hb:
+        results = get_labels_for_orders([("hepsiburada", -4366080818)])
+    mock_hb.assert_not_called()
+    assert results[0]["status"] == "error"
+    assert "package_not_yet_created" in results[0]["reason"]
+
+
 # ------------------------------------------------------------------
 # Toplu (bulk) işlem -- 1/10/50 fark etmeksizin AYNI fonksiyon,
 # bir siparişteki hata diğerlerini etkilemez.

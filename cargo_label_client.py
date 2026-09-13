@@ -32,6 +32,8 @@ Hepsiburada -- HepsiJet ortak barkod (Sidar'ın mağazası HepsiJet kullanıyor)
 
 import logging
 
+import requests
+
 from sync_core import hepsiburada_get
 from trendyol_client import SUPPLIER_ID, trendyol_get, trendyol_post
 
@@ -98,12 +100,25 @@ def hb_fetch_package_labels(package_number):
     UNVERIFIED (12.09.2026): response şeması resmi dokümanda örneklenmemiş.
     İlk canlı çağrıda ham response DEBUG seviyesinde loglanır -- sync_core.py
     içindeki HB debug-log desenine bilerek birebir uyularak yazıldı, şema
-    netleşince parse mantığı buna göre güncellenecek."""
+    netleşince parse mantığı buna göre güncellenecek.
+
+    CONFIRMED (canlı test, 12.09.2026): paket henüz oluşturulmamışsa
+    (ör. sipariş 'AwaitingPackage' statüsünde, sync_core.py'nin negatif
+    placeholder_id ile işaretlediği durumlar) HB bu endpoint'te 404 döner.
+    Ham requests.exceptions.HTTPError sızdırılmaz -- diğer hatalarla aynı
+    şekilde ele alınabilmesi için HepsiburadaLabelError'a çevrilir."""
     global _HB_LABEL_DEBUG_LOGGED
     from sync_core import HB_MERCHANT_ID
     path = f"/packages/merchantid/{HB_MERCHANT_ID}/packagenumber/{package_number}/labels"
 
-    response = hepsiburada_get(path)
+    try:
+        response = hepsiburada_get(path)
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        raise HepsiburadaLabelError(
+            f"Hepsiburada /labels HTTP {status} döndü (packageNumber={package_number}). "
+            "404 genellikle paketin henüz oluşturulmadığı (AwaitingPackage) anlamına gelir."
+        ) from exc
 
     if not _HB_LABEL_DEBUG_LOGGED:
         logger.debug(f"[HB LABEL DEBUG] ham response (şema doğrulama amaçlı): {response}")

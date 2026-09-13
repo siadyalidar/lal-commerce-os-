@@ -112,6 +112,19 @@ def _get_trendyol_label(shipment_package_id, order_row, force_refresh):
 
 
 def _get_hb_label(shipment_package_id, force_refresh):
+    # CONFIRMED (canlı test, 12.09.2026): sync_core.py, HB henüz gerçek
+    # packageNumber atamadığı siparişlerde (status genelde 'AwaitingPackage')
+    # negatif bir placeholder_id kullanıyor (-abs(order_number), bkz.
+    # sync_core.py). Böyle bir siparişte gerçek paket/etiket YOKTUR --
+    # API'ye hiç gidilmeden bunu tespit ediyoruz (Trendyol'daki
+    # status_not_ready kontrolüyle aynı mantık).
+    if shipment_package_id < 0:
+        return _error_result(
+            "hepsiburada", shipment_package_id,
+            "package_not_yet_created: sipariş muhtemelen 'AwaitingPackage' statüsünde -- "
+            "Hepsiburada henüz gerçek bir packageNumber atamamış.",
+        )
+
     if not force_refresh:
         cached = get_cached_cargo_label("hepsiburada", shipment_package_id)
         if cached:
