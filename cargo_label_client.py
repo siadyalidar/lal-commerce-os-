@@ -25,9 +25,15 @@ mağazası Trendyol Öder kullanıyor (12.09.2026 onayı).
 Hepsiburada -- HepsiJet ortak barkod (Sidar'ın mağazası HepsiJet kullanıyor):
   GET /packages/merchantid/{merchantId}/packagenumber/{packageNumber}/labels
   https://developers.hepsiburada.com/hepsiburada/reference/ortak-barkod-olusturma
-  UNVERIFIED: response şeması dokümanda örneklenmemiş. hb_fetch_package_labels()
-  ilk canlı çağrıda ham response'u loglar (sync_core.py'deki "_HB_*_DEBUG_LOGGED"
-  desenine benzer) -- şema netleşince bu fonksiyon güncellenecek.
+  CONFIRMED (canlı test, 13.09.2026): response şeması --
+    {"format": "base64zpl", "data": [<base64-encoded ZPL>, ...],
+     "description": "...", "code": "100"|diğer, "hasMerchantMutualBarcode": bool}
+  Şema normalizasyonu (base64 çözme, Trendyol ile ortak iç formata çevirme)
+  cargo_label_service._parse_hb_label_response() içinde -- bu modül (client)
+  bilerek ham response'u olduğu gibi döndürmeye devam ediyor (saf HTTP
+  wrapper prensibi).
+  Paket henüz oluşturulmamışsa (status='AwaitingPackage', negatif
+  placeholder_id) HB 404 döner -- HepsiburadaLabelError'a çevrilir.
 """
 
 import logging
@@ -95,12 +101,12 @@ def trendyol_get_common_label(cargo_tracking_number):
 # ------------------------------------------------------------------
 
 def hb_fetch_package_labels(package_number):
-    """HepsiJet ortak barkod etiketini çeker.
+    """HepsiJet ortak barkod etiketini çeker (ham response, parse etmez --
+    şema yorumlama cargo_label_service._parse_hb_label_response()'da).
 
-    UNVERIFIED (12.09.2026): response şeması resmi dokümanda örneklenmemiş.
-    İlk canlı çağrıda ham response DEBUG seviyesinde loglanır -- sync_core.py
-    içindeki HB debug-log desenine bilerek birebir uyularak yazıldı, şema
-    netleşince parse mantığı buna göre güncellenecek.
+    CONFIRMED (canlı test, 13.09.2026): response şeması --
+    {"format": "base64zpl", "data": [<base64-encoded ZPL>, ...],
+     "description": "...", "code": "100", "hasMerchantMutualBarcode": true}
 
     CONFIRMED (canlı test, 12.09.2026): paket henüz oluşturulmamışsa
     (ör. sipariş 'AwaitingPackage' statüsünde, sync_core.py'nin negatif

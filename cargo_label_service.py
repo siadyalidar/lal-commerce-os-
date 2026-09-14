@@ -29,6 +29,7 @@ döner (bkz. LabelResult).
   yüzden sadece önbellek kontrolü uygulanır.
 """
 
+import base64
 import json
 import logging
 
@@ -111,6 +112,27 @@ def _get_trendyol_label(shipment_package_id, order_row, force_refresh):
     return _ok_result("trendyol", shipment_package_id, "ZPL", label_data, False)
 
 
+def _parse_hb_label_response(raw):
+    """CONFIRMED (canlı test, 13.09.2026): HB /labels şu şemayı döner:
+    {"format": "base64zpl", "data": [<base64-encoded ZPL>, ...],
+     "description": "...", "code": "100"|diğer, "hasMerchantMutualBarcode": bool}
+
+    'code' 100 değilse (barkod üretilememiş demektir) başarı sayılmaz.
+    Başarılıysa, Trendyol ile AYNI iç formata normalize edilir
+    ([{"label": "^XA...", "format": "ZPL"}, ...]) -- böylece Faz 8'deki
+    ZPL->görüntü render katmanı pazaryerinden bağımsız, TEK bir kod yolu
+    olarak çalışabilir."""
+    if raw.get("code") != "100" or raw.get("format") != "base64zpl":
+        raise HepsiburadaLabelError(f"HB etiket üretilemedi: {raw.get('description') or raw}")
+    zpl_labels = [
+        {"label": base64.b64decode(item).decode("utf-8"), "format": "ZPL"}
+        for item in raw.get("data") or []
+    ]
+    if not zpl_labels:
+        raise HepsiburadaLabelError(f"HB 'data' alanı boş döndü: {raw}")
+    return zpl_labels
+
+
 def _get_hb_label(shipment_package_id, force_refresh):
     # CONFIRMED (canlı test, 12.09.2026): sync_core.py, HB henüz gerçek
     # packageNumber atamadığı siparişlerde (status genelde 'AwaitingPackage')
@@ -132,15 +154,16 @@ def _get_hb_label(shipment_package_id, force_refresh):
 
     try:
         raw = hb_fetch_package_labels(shipment_package_id)
+        labels = _parse_hb_label_response(raw)
     except HepsiburadaLabelError as exc:
         return _error_result("hepsiburada", shipment_package_id, f"hb_api_error: {exc}")
 
-    label_data = json.dumps(raw, ensure_ascii=False)
+    label_data = json.dumps(labels, ensure_ascii=False)
     save_cargo_label(
         marketplace="hepsiburada", shipment_package_id=shipment_package_id,
-        cargo_tracking_number=None, label_format="RAW_JSON", label_data=label_data,
+        cargo_tracking_number=None, label_format="ZPL", label_data=label_data,
     )
-    return _ok_result("hepsiburada", shipment_package_id, "RAW_JSON", label_data, False)
+    return _ok_result("hepsiburada", shipment_package_id, "ZPL", label_data, False)
 
 
 def get_labels_for_orders(order_keys, force_refresh=False):
