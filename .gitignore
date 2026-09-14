@@ -21,3 +21,19 @@ uploads/
 # Git patch dosyaları ve DB yedekleri repo'ya dahil edilmez
 *.patch
 *.db.bak-*
+
+# Kargo mutabakatı oturumu (14.09.2026) — yedekler, audit çıktıları, çalışma zamanı artıkları
+*.db.backup_*
+*.bak_step*
+*.log
+dump.rdb
+nohup.out
+celerybeat-schedule*
+audit_before.txt
+audit_after.txt
+analiz.sh
+analiz2.sh
+analiz_ciktisi.txt
+analiz_ciktisi2.txt
+*.bak-20260830
+*.bak_qna_beat_*

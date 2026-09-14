@@ -363,6 +363,25 @@ def _migrate_cargo_labels(conn):
     """)
 
 
+def _migrate_cargo_reconciliation(conn):
+    """Kargo maliyeti kok neden duzeltmesi (14.09.2026):
+
+    cargo_sync_failures: fatura kalemi cekimi basarisiz olursa (bkz.
+    sync_cargo_costs 'except Exception') artik SESSIZCE yutulmuyor --
+    hangi invoice_serial_number'in ne zaman, hangi hatayla basarisiz
+    oldugu burada izlenir. Basarili bir sonraki denemede kayit silinir."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cargo_sync_failures (
+            marketplace TEXT NOT NULL,
+            invoice_serial_number TEXT NOT NULL,
+            last_error TEXT,
+            last_attempt_at TEXT DEFAULT (datetime('now', 'localtime')),
+            attempt_count INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (marketplace, invoice_serial_number)
+        )
+    """)
+
+
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
     ("2026_08_09_growth_columns", _migrate_growth_columns),
@@ -370,6 +389,7 @@ _MIGRATIONS = [
     ("2026_08_24_review_first_synced_at", _migrate_review_first_synced_at),
     ("2026_09_03_hb_discount_breakdown", _migrate_hb_discount_breakdown),
     ("2026_09_12_cargo_labels", _migrate_cargo_labels),
+    ("2026_09_14_cargo_reconciliation", _migrate_cargo_reconciliation),
 ]
 
 def init_db():
@@ -1049,6 +1069,29 @@ def upsert_cargo_costs(rows):
                 barcode=excluded.barcode,
                 raw_json=excluded.raw_json
         """, rows)
+
+
+def record_cargo_sync_failure(marketplace, invoice_serial_number, error_message):
+    """Bir kargo faturasi kalemi cekimi basarisiz oldugunda cagrilir.
+    Sessiz 'except: continue' artik iz birakiyor (bkz. _migrate_cargo_reconciliation)."""
+    with get_connection() as conn:
+        conn.execute("""
+            INSERT INTO cargo_sync_failures (marketplace, invoice_serial_number, last_error, attempt_count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(marketplace, invoice_serial_number) DO UPDATE SET
+                last_error=excluded.last_error,
+                last_attempt_at=datetime('now','localtime'),
+                attempt_count=cargo_sync_failures.attempt_count + 1
+        """, (marketplace, invoice_serial_number, str(error_message)))
+
+
+def clear_cargo_sync_failure(marketplace, invoice_serial_number):
+    """Bir fatura sonradan basariyla cekilirse onceki hata kaydi temizlenir."""
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM cargo_sync_failures WHERE marketplace=? AND invoice_serial_number=?",
+            (marketplace, invoice_serial_number),
+        )
 
 
 def upsert_product_costs(rows):

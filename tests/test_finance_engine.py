@@ -1423,3 +1423,103 @@ def test_payout_calendar_recognizes_manual_refund(db):
     )
     # Negatif -50 net beklenir (debt=50, credit=0 -> return_amount=+50 -> net = 0-0-0-50)
     assert total_lag_estimated == pytest.approx(-50.0)
+
+
+def test_monthly_profit_flags_incomplete_data_when_cargo_missing(db):
+    """KRITIK: Bir ayda kargo faturasi eksik siparisler varsa, o ayin kar
+    toplami sessizce dusuk gorunmemeli -- ay sonucunda incompleteData=True
+    ve ordersMissingCargo>0 olmali ki UI bunu ayrica isaretleyebilsin."""
+    now = datetime.now()
+    now_ms = int(now.timestamp() * 1000)
+    _setup_line(330, "SKU-MPCARGO-OK", 1, 200.0, 80.0, now_ms, "ONMPC-OK1", cargo_amount=10.0)
+    upsert_settlements([
+        _settlement_row(id="mpc-ok-sale", barcode="SKU-MPCARGO-OK", shipment_package_id=330,
+                         raw_transaction_type="Satis", credit=200.0, commission_amount=20.0,
+                         seller_revenue=180.0, order_number="ONMPC-OK1", transaction_date=now_ms),
+    ])
+    _setup_line(331, "SKU-MPCARGO-MISS", 1, 150.0, 60.0, now_ms, "ONMPC-MISS1", cargo_amount=None)
+    upsert_settlements([
+        _settlement_row(id="mpc-miss-sale", barcode="SKU-MPCARGO-MISS", shipment_package_id=331,
+                         raw_transaction_type="Satis", credit=150.0, commission_amount=15.0,
+                         seller_revenue=135.0, order_number="ONMPC-MISS1", transaction_date=now_ms),
+    ])
+
+    month_start = datetime(now.year, now.month, 1)
+    months = fe.monthly_profit(start_dt=month_start, end_dt=now, marketplace_filter="trendyol")
+    key = now.strftime("%Y-%m")
+    by_month = {m["month"]: m for m in months}
+    m = by_month[key]
+
+    assert m["incompleteData"] is True
+    assert m["ordersMissingCargo"] == 1
+    assert m["revenue"] == pytest.approx(350.0)
+    assert m["grossProfit"] == pytest.approx(200 - 20 - 80 - 10)
+
+
+def test_monthly_profit_complete_when_all_cargo_present(db):
+    """Kontrol testi: tum siparislerin kargo maliyeti biliniyorsa
+    incompleteData False, ordersMissingCargo 0 olmali (regresyon yok)."""
+    now = datetime.now()
+    now_ms = int(now.timestamp() * 1000)
+    _setup_line(332, "SKU-MPCOMPLETE", 1, 100.0, 40.0, now_ms, "ONMPCOMPLETE1", cargo_amount=5.0)
+    upsert_settlements([
+        _settlement_row(id="mpcomplete-sale", barcode="SKU-MPCOMPLETE", shipment_package_id=332,
+                         raw_transaction_type="Satis", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONMPCOMPLETE1", transaction_date=now_ms),
+    ])
+
+    month_start = datetime(now.year, now.month, 1)
+    months = fe.monthly_profit(start_dt=month_start, end_dt=now, marketplace_filter="trendyol")
+    key = now.strftime("%Y-%m")
+    by_month = {m["month"]: m for m in months}
+    m = by_month[key]
+
+    assert m["incompleteData"] is False
+    assert m["ordersMissingCargo"] == 0
+
+
+def test_monthly_profit_missing_cargo_order_counted_once_for_multi_line_order(db):
+    """Bir siparişte birden fazla urun satiri varsa ve kargo eksikse,
+    ordersMissingCargo bu siparisi SIPARIS bazinda bir kez saymali,
+    satir bazinda degil."""
+    now = datetime.now()
+    now_ms = int(now.timestamp() * 1000)
+    spid = 333
+    order_number = "ONMPMULTI1"
+    upsert_orders([{
+        "shipment_package_id": spid, "marketplace": "trendyol", "order_number": order_number,
+        "order_date": now_ms, "status": "Delivered", "customer": "Test",
+        "cargo_provider": "Aras", "gross_amount": 300.0,
+        "discount_amount": 0.0, "net_amount": 300.0,
+    }])
+    upsert_order_lines([
+        {"shipment_package_id": spid, "marketplace": "trendyol", "barcode": "SKU-MULTI-A",
+         "merchant_sku": "SKU-MULTI-A", "product_name": "Urun A", "quantity": 1,
+         "line_unit_price": 100.0, "commission_rate": 10.0},
+        {"shipment_package_id": spid, "marketplace": "trendyol", "barcode": "SKU-MULTI-B",
+         "merchant_sku": "SKU-MULTI-B", "product_name": "Urun B", "quantity": 1,
+         "line_unit_price": 200.0, "commission_rate": 10.0},
+    ])
+    upsert_product_costs([
+        {"sku": "SKU-MULTI-A", "product_name": "Urun A", "sale_price_incl_vat": 100.0,
+         "sale_price_excl_vat": 100.0 / 1.2, "cost_incl_vat": 40.0, "cost_excl_vat": 40.0 / 1.1},
+        {"sku": "SKU-MULTI-B", "product_name": "Urun B", "sale_price_incl_vat": 200.0,
+         "sale_price_excl_vat": 200.0 / 1.2, "cost_incl_vat": 80.0, "cost_excl_vat": 80.0 / 1.1},
+    ])
+    upsert_settlements([
+        _settlement_row(id="multi-a-sale", barcode="SKU-MULTI-A", shipment_package_id=spid,
+                         raw_transaction_type="Satis", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number=order_number, transaction_date=now_ms),
+        _settlement_row(id="multi-b-sale", barcode="SKU-MULTI-B", shipment_package_id=spid,
+                         raw_transaction_type="Satis", credit=200.0, commission_amount=20.0,
+                         seller_revenue=180.0, order_number=order_number, transaction_date=now_ms),
+    ])
+    # DIKKAT: bu siparis icin hic kargo faturasi eklenmedi.
+
+    month_start = datetime(now.year, now.month, 1)
+    months = fe.monthly_profit(start_dt=month_start, end_dt=now, marketplace_filter="trendyol")
+    key = now.strftime("%Y-%m")
+    by_month = {m["month"]: m for m in months}
+    m = by_month[key]
+
+    assert m["ordersMissingCargo"] == 1

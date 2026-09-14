@@ -22,7 +22,7 @@
       <div class="hero-stat" id="net-profit-hero">
         <div class="hero-stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></div>
         <div>
-          <div class="hero-stat-label">Net Kâr</div>
+          <div class="hero-stat-label">Net Kâr <span class="hint is-hidden" id="stat-net-profit-cargo-hint" title="">⚠</span></div>
           <div class="hero-stat-value" id="stat-net-profit">–</div>
         </div>
       </div>
@@ -71,6 +71,7 @@
         </div>
         <div class="mpc-head-right">
           <span id="monthlyProfitInProgressBadge" class="mpc-badge is-hidden"></span>
+          <span id="monthlyProfitMissingCargoBadge" class="mpc-badge is-hidden"></span>
           <div id="monthlyProfitViewSwitch" class="mpc-view-switch" role="tablist">
             <button type="button" class="mpc-view-switch-btn is-active" data-view="trend" role="tab" aria-selected="true">Trend Analizi</button>
             <button type="button" class="mpc-view-switch-btn" data-view="cfo" role="tab" aria-selected="false">Finansal Özet</button>

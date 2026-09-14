@@ -86,6 +86,14 @@ from datetime import datetime, timedelta
 
 from database import get_connection, get_fixed_expenses_by_month
 
+# RC3 DÜZELTMESİ (14.09.2026): Trendyol settlement->kargo faturası gecikmesi
+# production DB'de 42 gerçek fatura üzerinden ölçüldü (ortalama 31.6 gün,
+# gözlemlenen maksimum 39.6 gün). Bu sabit, +5 gün güvenlik payıyla, eksik
+# kargo maliyetinin "normal gecikme" (pending) mi yoksa "kalıcı/anormal"
+# (overdue) mi olduğunu ayırt etmek için kullanılıyor. Salt eşik — mevcut
+# ordersMissingCargo/incompleteData davranışını DEĞİŞTİRMEZ.
+CARGO_COST_MAX_OBSERVED_DELAY_DAYS = 45
+
 # ============================================================
 # KATEGORİ EŞLEMESİ (marketplace-farkında, raw_transaction_type -> kategori)
 # ============================================================
@@ -611,11 +619,25 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         cargo_line = None
         cargo_missing = True
         cargo_missing_order = ln["order_number"]
+        # RC3 DÜZELTMESİ (14.09.2026): eksik kargo faturasının normal gecikme
+        # mi yoksa kalıcı/anormal bir eksiklik mi olduğunu ayırt etmek için
+        # sipariş tarihinden bu yana geçen süre CARGO_COST_MAX_OBSERVED_DELAY_DAYS
+        # ile kıyaslanıyor. Tamamen ek (additive) bir alan.
+        # DÜZELTME (14.09.2026): ln bir sqlite3.Row olabilir, .get() desteklemez —
+        # dosyanın geri kalanında da (örn. "orderDate": ln["order_date"]) doğrudan
+        # indeksleme kullanılıyor, tutarlılık için burada da öyle yapılıyor.
+        order_date_ms = ln["order_date"] if ln["order_date"] is not None else None
+        if order_date_ms:
+            days_since_order = (datetime.now() - datetime.fromtimestamp(order_date_ms / 1000)).days
+            cargo_status = "overdue" if days_since_order > CARGO_COST_MAX_OBSERVED_DELAY_DAYS else "pending"
+        else:
+            cargo_status = "pending"
     else:
         group_key = (ln["marketplace"], spid if spid is not None else f"order:{ln['order_number']}")
         n = max(lines_per_order.get(group_key, 1), 1)
         cargo_line = cargo_total_for_order / n
         cargo_missing = False
+        cargo_status = "ok"
 
     vat_missing = cost_row is None
     gross_revenue_excl_vat = None
@@ -711,6 +733,7 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         "estimated": estimated,
         "missingCost": missing_cost,
         "cargoMissing": cargo_missing,
+        "cargoStatus": cargo_status,
         "vatMissing": vat_missing,
         "fromSettlementOnly": isinstance(ln, dict) and ln.get("_fromSettlementOnly", False),
         "quantityEstimated": isinstance(ln, dict) and ln.get("_quantityEstimated", False),
@@ -936,7 +959,7 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
     """
     summary = compute_profit_summary(start_dt=start_dt, end_dt=end_dt, marketplace_filter=marketplace_filter)
 
-    by_month = defaultdict(lambda: {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0})
+    by_month = defaultdict(lambda: {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0, "missingCargoOrders": set(), "cargoOverdueOrders": set()})
     for ln in summary["lines"]:
         d = ln["orderDate"]
         if not d:
@@ -947,6 +970,17 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
         m["netHakedis"] += ln["netHakedis"] or 0
         if ln["profit"] is not None:
             m["grossProfit"] += ln["profit"]
+        if ln.get("cargoMissing"):
+            # B4 takibi (14.09.2026): bu ayin net kar toplami kargo faturasi
+            # eksik siparisler yuzunden SESSIZCE dusuk gorunmesin diye
+            # siparis bazinda (marketplace, orderNumber) benzersiz sayilir.
+            m["missingCargoOrders"].add((ln.get("marketplace"), ln.get("orderNumber")))
+            if ln.get("cargoStatus") == "overdue":
+                # RC3 takibi (14.09.2026): "overdue" olanlar ayrica sayiliyor,
+                # boylece normal gecikme (pending) ile kalici/anormal eksiklik
+                # (overdue) dashboard'da ayirt edilebilir. ordersMissingCargo
+                # davranisi DEGISMEDI, bu ek bir sayac.
+                m["cargoOverdueOrders"].add((ln.get("marketplace"), ln.get("orderNumber")))
 
         # 09.09.2026 DÜZELTİLDİ (önceki hata): iade, satışın ayına DEĞİL,
         # kendi transaction_date'inin düştüğü aya yazılmalı (bkz.
@@ -986,9 +1020,11 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
     cursor = datetime(start_dt.year, start_dt.month, 1)
     while cursor <= end_dt:
         key = cursor.strftime("%Y-%m")
-        m = by_month.get(key, {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0})
+        m = by_month.get(key, {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0, "missingCargoOrders": set()})
         net_profit = round(m["grossProfit"], 2)  # bkz. yukarıdaki not
         fixed_expenses = round(fixed_expenses_by_month.get(key, 0.0), 2)
+        orders_missing_cargo = len(m.get("missingCargoOrders") or ())
+        orders_cargo_overdue = len(m.get("cargoOverdueOrders") or ())
         months.append({
             "month": key,
             "revenue": round(m["grossRevenue"], 2),
@@ -996,6 +1032,9 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
             "netProfit": net_profit,
             "fixedExpenses": fixed_expenses,
             "realNetProfit": round(net_profit - fixed_expenses, 2),
+            "ordersMissingCargo": orders_missing_cargo,
+            "ordersCargoOverdue": orders_cargo_overdue,
+            "incompleteData": orders_missing_cargo > 0,
         })
         cursor = datetime(cursor.year + 1, 1, 1) if cursor.month == 12 else datetime(cursor.year, cursor.month + 1, 1)
     return months

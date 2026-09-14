@@ -35,13 +35,16 @@ EDİLDİKTEN sonra oluşur. Yeni/kargodaki bir sipariş için henüz settlement 
 olmayabilir — profit_engine.py bu durumda tahmini komisyona düşer.
 """
 
+import hashlib
 import json
 
 import requests
 from datetime import datetime, timedelta
 
 from database import (
+    clear_cargo_sync_failure,
     init_db,
+    record_cargo_sync_failure,
     upsert_cargo_costs,
     upsert_other_financials,
     upsert_settlements,
@@ -220,42 +223,71 @@ def fetch_other_financials(start_dt, end_dt, transaction_types=None, progress_cb
     return total, failures
 
 
-def _cargo_item_to_row(item, invoice_serial_number):
-    """Kargo faturası kalemini DB satırına çevirir.
-    Alan adları doğrulanmadığı için (bkz. dosya başındaki not) olası isimleri
-    sırayla dener; hiçbiri tutmazsa None bırakır ama ham JSON'u her zaman saklar.
+def _cargo_field(item, *keys):
+    """Kargo kalemi JSON'unda olası alan adlarını sırayla dener (bkz. dosya
+    başındaki şema-belirsizliği notu)."""
+    for k in keys:
+        if k in item and item[k] is not None:
+            return item[k]
+    return None
+
+
+def _cargo_item_content_hash(item):
+    """Kalemin İÇERİĞİNDEN (tutar dahil) kısa, kararlı bir hash üretir.
+    Aynı kalem tekrar senkronize edildiğinde AYNI hash'i üretir (idempotent);
+    farklı tutarlı/alanlı iki kalem (örn. gidiş/iade) FARKLI hash alır."""
+    payload = json.dumps(
+        {
+            "amount": _cargo_field(item, "amount", "price", "cargoPrice", "invoiceAmount", "total"),
+            "shipmentPackageId": _cargo_field(item, "shipmentPackageId", "packageId"),
+            "orderNumber": _cargo_field(item, "orderNumber", "orderNo"),
+            "barcode": _cargo_field(item, "barcode"),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
+
+
+def _cargo_items_to_rows(items, invoice_serial_number):
+    """Bir faturanın TÜM kalemlerini DB satırlarına çevirir.
+
+    RC1 DÜZELTMESİ (14.09.2026): Eskiden _cargo_item_to_row() her kalemi TEK
+    BAŞINA işliyordu ve parcelUniqueId yoksa fallback id sadece "ilk bulunan"
+    barcode/orderNumber/shipmentPackageId'den üretiliyordu. Aynı faturada aynı
+    siparişe ait, parcelUniqueId'si OLMAYAN iki farklı kargo hareketi (örn.
+    bölünmüş paket, farklı tutar) gelirse ikisi AYNI id'yi alıp biri diğerinin
+    ÜZERİNE sessizce yazılıyordu (kargo maliyeti kayboluyordu). Şimdi:
+    parcelUniqueId yoksa id'ye kalemin İÇERİK HASH'i + aynı hash'e sahip
+    kalemler için bir occurrence-counter eki ekleniyor -- böylece iki farklı
+    kalem artık her zaman farklı id alır, aynı kalem tekrar sync edildiğinde
+    ise (aynı liste sırasıyla) aynı id'yi üretmeye devam eder (idempotent).
     """
-    def first(*keys):
-        for k in keys:
-            if k in item and item[k] is not None:
-                return item[k]
-        return None
+    seen_hash_counts = {}
+    rows = []
+    for item in items:
+        item_id = _cargo_field(item, "id", "invoiceItemId", "itemId")
+        if item_id is None:
+            parcel_id = _cargo_field(item, "parcelUniqueId")
+            if parcel_id is not None:
+                item_id = f"{invoice_serial_number}-{parcel_id}"
+            else:
+                content_hash = _cargo_item_content_hash(item)
+                occurrence = seen_hash_counts.get(content_hash, 0)
+                seen_hash_counts[content_hash] = occurrence + 1
+                base = _cargo_field(item, "barcode", "orderNumber", "shipmentPackageId") or "noref"
+                item_id = f"{invoice_serial_number}-{base}-{content_hash}-{occurrence}"
 
-    item_id = first("id", "invoiceItemId", "itemId")
-    if item_id is None:
-        # 09.09.2026 DÜZELTİLDİ: canlı ortamda KEŞFEDİLDİ — aynı orderNumber'a
-        # ait "Gönderi Kargo Bedeli" (gidiş) ve "İade Kargo Bedeli" (dönüş)
-        # kalemleri AYNI orderNumber'ı taşıyor; eskiden id sadece
-        # invoice+orderNumber'dan üretildiği için ikisi AYNI id'yi alıp
-        # upsert'te biri diğerinin ÜZERİNE YAZILIYORDU (kargo maliyeti
-        # sessizce kayboluyordu). API'nin verdiği 'parcelUniqueId' gerçekten
-        # benzersiz (gidiş/iade için farklı) -- önce onu dene.
-        parcel_id = first("parcelUniqueId")
-        if parcel_id is not None:
-            item_id = f"{invoice_serial_number}-{parcel_id}"
-        else:
-            # Kararlı bir PK üretmek için invoice no + barkod/sipariş no birleşimi kullan
-            item_id = f"{invoice_serial_number}-{first('barcode', 'orderNumber', 'shipmentPackageId') or len(json.dumps(item))}"
-
-    return {
-        "id": str(item_id),
-        "invoice_serial_number": str(invoice_serial_number),
-        "shipment_package_id": first("shipmentPackageId", "packageId"),
-        "order_number": first("orderNumber", "orderNo"),
-        "barcode": first("barcode"),
-        "amount": first("amount", "price", "cargoPrice", "invoiceAmount", "total"),
-        "raw_json": json.dumps(item, ensure_ascii=False),
-    }
+        rows.append({
+            "id": str(item_id),
+            "invoice_serial_number": str(invoice_serial_number),
+            "shipment_package_id": _cargo_field(item, "shipmentPackageId", "packageId"),
+            "order_number": _cargo_field(item, "orderNumber", "orderNo"),
+            "barcode": _cargo_field(item, "barcode"),
+            "amount": _cargo_field(item, "amount", "price", "cargoPrice", "invoiceAmount", "total"),
+            "raw_json": json.dumps(item, ensure_ascii=False),
+        })
+    return rows
 
 
 def fetch_cargo_invoice_items(invoice_serial_number):
@@ -272,6 +304,13 @@ def sync_cargo_costs(progress_cb=None):
     (= kaydın "id"'si) ile kargo faturası kalemlerini çeker ve cargo_costs tablosuna yazar.
     NOT: Bu fonksiyon settlements/otherfinancials'ın DB'de zaten senkronize edilmiş
     olmasını varsayar (önce fetch_other_financials çağrılmalı).
+
+    RC3 DÜZELTMESİ (14.09.2026): Bir fatura no'nun kalemleri çekilemezse (örn.
+    Trendyol servisi geçmişe dönük hata veriyorsa) artık sessizce atlanmıyor;
+    cargo_sync_failures tablosuna kaydediliyor (record_cargo_sync_failure) ki
+    "normal gecikme" ile "kalıcı/anormal hata" ayrılabilsin. Başarılı olursa
+    önceki hata kaydı temizleniyor (clear_cargo_sync_failure) — fatura daha
+    sonra kendi kendine düzelirse durum de kendiliğinden temizlenir.
     """
     from database import get_connection
 
@@ -292,13 +331,19 @@ def sync_cargo_costs(progress_cb=None):
             progress_cb(f"Kargo faturası detayı: {i + 1}/{len(invoice_ids)} ({invoice_id})")
         try:
             items = fetch_cargo_invoice_items(invoice_id)
-        except Exception:
+        except Exception as e:
             # Bir fatura no ile ilgili sorun (örn. servis geçmişe dönük çalışmıyor)
             # tüm senkronizasyonu durdurmasın; diğer faturalarla devam et.
+            # Ama artık bu durum kayıt altına alınıyor (bkz. docstring).
+            record_cargo_sync_failure("Trendyol", str(invoice_id), str(e))
+            if progress_cb:
+                progress_cb(f"⚠️ Kargo faturası çekilemedi, kaydedildi: {invoice_id} ({e})")
             continue
-        cargo_rows = [_cargo_item_to_row(it, invoice_id) for it in items]
+
+        cargo_rows = _cargo_items_to_rows(items, invoice_id)
         upsert_cargo_costs(cargo_rows)
         total_items += len(cargo_rows)
+        clear_cargo_sync_failure("Trendyol", str(invoice_id))
 
     return len(invoice_ids), total_items
 
@@ -318,6 +363,45 @@ def sync_finance_data(start_dt, end_dt, progress_cb=None):
 
     return {
         "settlement_count": n_settlements,
+        "other_financial_count": n_other,
+        "other_financial_failures": other_failures,
+        "cargo_invoice_count": n_invoices,
+        "cargo_item_count": n_cargo_items,
+    }
+
+
+def reconcile_cargo_costs(lookback_days=180, progress_cb=None):
+    """RC2 DÜZELTMESİ (14.09.2026): normal sync akışındaki dar pencere
+    (fetch_settlements/fetch_other_financials'ın kapsadığı "son N gün"), ölçülen
+    31.6 gün ortalama / 39.6 gün gözlemlenen maksimum settlement->kargo faturası
+    gecikmesini garanti yakalamıyordu. Bu fonksiyon SADECE 'DeductionInvoices'
+    tipini geniş bir pencerede (varsayılan 180 gün, gerekirse daha da geniş
+    çağrılabilir) yeniden çeker, sonra sync_cargo_costs()'u tekrar çalıştırır.
+
+    Idempotent: fetch_other_financials zaten upsert kullanıyor, sync_cargo_costs
+    de upsert_cargo_costs kullanıyor (RC1 düzeltmesiyle artık collision-safe id
+    üretiyor) — bu yüzden tekrar tekrar çağırmak duplicate ÜRETMEZ, sadece
+    eksik/gecikmiş kayıtları tamamlar.
+
+    Returns: dict — other_financial_count, other_financial_failures,
+             cargo_invoice_count, cargo_item_count (sync_finance_data ile
+             aynı anahtar isimleri, kıyaslama kolay olsun diye)
+    """
+    end_dt = datetime.now()
+    start_dt = end_dt - timedelta(days=lookback_days)
+
+    if progress_cb:
+        progress_cb(
+            f"Kargo mutabakatı: geniş pencere taranıyor "
+            f"({start_dt:%d.%m.%Y} - {end_dt:%d.%m.%Y}, {lookback_days} gün)"
+        )
+
+    n_other, other_failures = fetch_other_financials(
+        start_dt, end_dt, transaction_types=["DeductionInvoices"], progress_cb=progress_cb
+    )
+    n_invoices, n_cargo_items = sync_cargo_costs(progress_cb=progress_cb)
+
+    return {
         "other_financial_count": n_other,
         "other_financial_failures": other_failures,
         "cargo_invoice_count": n_invoices,

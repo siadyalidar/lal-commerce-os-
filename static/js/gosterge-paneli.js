@@ -27,7 +27,7 @@
     if (el) el.classList.toggle('is-hidden', !visible);
   }
 
-  function renderProfitSummary(t) {
+  function renderProfitSummary(t, dq) {
     document.getElementById('stat-gross-revenue').textContent = fmtTL(t.gross_revenue);
     document.getElementById('stat-revenue').textContent = fmtTL(t.revenue);
     document.getElementById('stat-gross-profit').textContent = fmtTL(t.gross_profit);
@@ -40,6 +40,16 @@
     netEl.textContent = fmtTL(t.net_profit);
     netEl.className = 'hero-stat-value ' + (t.net_profit >= 0 ? 'green' : 'red');
     document.getElementById('net-profit-hero').classList.toggle('negative', t.net_profit < 0);
+    const cargoHint = document.getElementById('stat-net-profit-cargo-hint');
+    if (cargoHint) {
+      const missingCargoCount = dq && dq.orders_missing_cargo_invoice;
+      if (missingCargoCount) {
+        cargoHint.title = `${missingCargoCount} siparişin kargo faturası henüz gelmedi — Net Kâr bu siparişleri içermiyor (uydurulmadı, eksik veri olarak işaretlendi).`;
+        cargoHint.classList.remove('is-hidden');
+      } else {
+        cargoHint.classList.add('is-hidden');
+      }
+    }
     document.getElementById('stat-return').textContent = fmtTL(t.return_amount);
     document.getElementById('stat-return-count').textContent = t.return_count ? `${fmtNum(t.return_count)} iade işlemi` : '';
     document.getElementById('stat-payment-order').textContent = fmtTL(t.payment_order_net);
@@ -110,7 +120,7 @@
         if (isCurrentRequest('summary', controller, generation)) safeText('stat-orders', '—');
       }
       if (summary.error) { showError(summary.error); setVisible('summary-loading', false); return; }
-      renderProfitSummary(summary.totals);
+      renderProfitSummary(summary.totals, summary.data_quality);
       renderLines(summary.lines || summary.orders || []);
       loadMonthlyProfitChart(generation);
       setVisible('summary-loading', false);
@@ -396,6 +406,25 @@
     }
   }
 
+  // 14.09.2026 eklendi: aylardan biri (ya da birden fazlası) kargo faturası
+  // eksik siparişler içeriyorsa (bkz. finance_engine.monthly_profit
+  // ordersMissingCargo/incompleteData), grafik SESSİZCE düşük net kâr
+  // göstermesin diye ayrı bir rozetle açıkça belirtilir.
+  function renderMonthlyProfitMissingCargoBadge(months) {
+    const badge = document.getElementById('monthlyProfitMissingCargoBadge');
+    if (!badge) return;
+    const incomplete = months.filter(m => m.incompleteData && m.ordersMissingCargo > 0);
+    if (!incomplete.length) { badge.classList.add('is-hidden'); return; }
+    const totalMissing = incomplete.reduce((sum, m) => sum + (m.ordersMissingCargo || 0), 0);
+    const monthLabels = incomplete.map(m => {
+      const [y, mo] = m.month.split('-');
+      return new Date(y, mo - 1, 1).toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' });
+    }).join(', ');
+    badge.textContent = `${monthLabels}: ${totalMissing} sipariş kargo faturası bekliyor`;
+    badge.title = 'Bu aylardaki net kâr eksik — kargo faturası gelmeyen siparişler toplama dahil edilmedi (0 olarak uydurulmadı).';
+    badge.classList.remove('is-hidden');
+  }
+
   async function loadMonthlyProfitChart(generation = refreshGeneration) {
     if (monthlyProfitLoaded) return;
     const controller = startRequest('monthlyProfit');
@@ -423,6 +452,7 @@
     monthlyProfitMonths = months;
 
     renderMonthlyProfitInProgressBadge(months);
+    renderMonthlyProfitMissingCargoBadge(months);
 
     renderMonthlyProfitLineChart(months);
     renderMonthlyProfitBarChart(months);
