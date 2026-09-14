@@ -75,6 +75,30 @@ def test_trendyol_get_common_label_raises_on_empty_data(mock_get):
         trendyol_get_common_label("1234567890123")
 
 
+@patch("cargo_label_client.trendyol_get")
+def test_trendyol_get_common_label_translates_http_400_to_domain_error(mock_get):
+    """CONFIRMED (canlı test, 14.09.2026): etiket henüz create edilmemişse
+    Trendyol boş 'data' DEĞİL, doğrudan HTTP 400 döner. Bu, cargo_label_service
+    'ın "get boşsa create çağır" akışını tetiklemesi için TrendyolLabelError'a
+    çevrilmeli (HB'deki 404->HepsiburadaLabelError çevirisiyle aynı desen)."""
+    fake_response = MagicMock(status_code=400)
+    mock_get.side_effect = requests.exceptions.HTTPError("400 Client Error", response=fake_response)
+    with pytest.raises(TrendyolLabelError):
+        trendyol_get_common_label("1234567890123")
+
+
+@patch("cargo_label_client.trendyol_get")
+def test_trendyol_get_common_label_reraises_other_http_errors(mock_get):
+    """400 dışındaki hatalar (ör. 401 kimlik hatası) 'etiket henüz yok'
+    anlamına gelmez -- bunlar gizlenmeden olduğu gibi yükselmeli, aksi
+    halde gerçek bir kimlik/izin sorunu sessizce create döngüsüne
+    sokulmuş olur."""
+    fake_response = MagicMock(status_code=401)
+    mock_get.side_effect = requests.exceptions.HTTPError("401 Unauthorized", response=fake_response)
+    with pytest.raises(requests.exceptions.HTTPError):
+        trendyol_get_common_label("1234567890123")
+
+
 # ------------------------------------------------------------------
 # Hepsiburada -- /packages/merchantid/{id}/packagenumber/{packageNumber}/labels
 # ŞEMA UNVERIFIED (dokümanda örnek response yok) -- bu yüzden

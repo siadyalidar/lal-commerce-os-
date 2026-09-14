@@ -84,9 +84,23 @@ def trendyol_get_common_label(cargo_tracking_number):
     'data' boşsa (henüz create edilmemiş ya da Trendyol tarafında henüz
     hazır değilse) sessizce [] DÖNDÜRÜLMEZ -- TrendyolLabelError fırlatılır,
     böylece çağıran katman (service) "create çağır" ile "gerçekten hata"yı
-    ayırt edebilir."""
+    ayırt edebilir.
+
+    Trendyol AYRICA (canlı test, 14.09.2026 CONFIRMED): etiket henüz create
+    edilmemişse boş 'data' DEĞİL, doğrudan HTTP 400 döner. Bu durum da
+    TrendyolLabelError'a çevrilir (aynı "henüz yok" anlamı) -- ama 400
+    dışındaki hatalar (401 vb. gerçek kimlik/izin sorunları) gizlenmeden
+    olduğu gibi yükseltilir."""
     path = f"/integration/sellers/{SUPPLIER_ID}/common-label/{cargo_tracking_number}"
-    response = trendyol_get(path)
+    try:
+        response = trendyol_get(path)
+    except requests.exceptions.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 400:
+            raise TrendyolLabelError(
+                f"Trendyol getCommonLabel HTTP 400 döndü (cargoTrackingNumber={cargo_tracking_number}) "
+                "-- muhtemelen etiket henüz create edilmemiş."
+            ) from exc
+        raise
     labels = (response or {}).get("data") or []
     if not labels:
         raise TrendyolLabelError(
