@@ -121,4 +121,14 @@ celery_app.conf.beat_schedule = {
         "schedule": 60 * 15,  # her 15 dakikada bir
         "kwargs": {"limit": 5},
     },
+    # AKTIF - 14.09.2026 (RC2): trendyol_finance.reconcile_cargo_costs() daha
+    # once hicbir yerden cagrilmiyordu (bkz. tasks.scheduled_cargo_reconciliation
+    # docstringi) -- Trendyol kargo faturalarinin 31.6 gun ortalama / 39.6 gun
+    # gozlemlenen maksimum gecikmesini yakalamak icin 180 gunluk genis pencereyle
+    # gece calisir. Diger gece isleriyle (03:00, 04:00) cakismasin diye 05:00
+    # secildi. Idempotent, guvenle her gece calisabilir.
+    "nightly-cargo-reconciliation": {
+        "task": "tasks.scheduled_cargo_reconciliation",
+        "schedule": crontab(hour=5, minute=0),  # her gece 05:00 (Europe/Istanbul)
+    },
 }

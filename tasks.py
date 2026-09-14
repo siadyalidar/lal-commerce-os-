@@ -180,3 +180,33 @@ def backfill_hb_quantities(self, limit=30):
         return backfill_hb_settlement_only_quantities(limit=limit)
     except SoftTimeLimitExceeded:
         return "zaman aşımına uğradı"
+
+
+# ============================================================
+# KARGO FATURASI MUTABAKATI (RC2, 14.09.2026) — periyodik hale getirme
+# ============================================================
+# ÖNCEKİ DURUM: trendyol_finance.reconcile_cargo_costs() (180 günlük geniş
+# pencereyle "DeductionInvoices" tipini yeniden çekip sync_cargo_costs()'u
+# tekrar çalıştıran fonksiyon) 14.09.2026'da RC2 düzeltmesiyle yazıldı ve
+# test edildi (test_cargo_reconciliation.py) ama HİÇBİR yerden (ne Beat'e,
+# ne bir route'a) bağlanmamıştı. Normal senkron akışı (_scheduled_sync,
+# son 2/7 gün) ölçülen 31.6 gün ortalama / 39.6 gün gözlemlenen maksimum
+# settlement->kargo faturası gecikmesini yakalayamıyordu — bu yüzden teslim
+# edilmiş siparişlerin büyük çoğunluğunda cargoMissing=True kalıp Net Kâr
+# sürekli None/"—" görünüyordu (bkz. proje notu: net-kar-bug).
+#
+# Bu task idempotenttir (reconcile_cargo_costs zaten upsert kullanıyor,
+# tekrar tekrar çalıştırmak duplicate ÜRETMEZ), bu yüzden günlük periyodik
+# çalıştırmak güvenlidir.
+@celery_app.task(bind=True, max_retries=1, default_retry_delay=600)
+def scheduled_cargo_reconciliation(self):
+    """Her gece 05:00: kargo faturası mutabakatını 180 günlük geniş pencerede
+    çalıştırır (bkz. trendyol_finance.reconcile_cargo_costs)."""
+    from trendyol_finance import reconcile_cargo_costs
+
+    try:
+        return reconcile_cargo_costs(lookback_days=180)
+    except SoftTimeLimitExceeded:
+        return "zaman aşımına uğradı"
+    except Exception as exc:
+        raise self.retry(exc=exc)
