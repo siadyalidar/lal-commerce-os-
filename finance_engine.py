@@ -670,6 +670,13 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
             vat_missing = True
 
     profit = (net_hakedis - cogs - cargo_line) if (cogs is not None and cargo_line is not None) else None
+    # FAZ 1 (15.09.2026, Sidar onayıyla): GERÇEK Brüt Kâr = Ciro - SADECE COGS.
+    # "profit" (yukarıda) BİLİNÇLİ OLARAK değiştirilmedi -- o hâlâ komisyon+
+    # kargo sonrası "katkı kârı"nı taşıyor ve netProfit zinciri ona dayanıyor.
+    # true_gross_profit ise standart muhasebe tanımına uyan, YENİ ve EKLEMELİ
+    # bir alan: komisyon/kargo dahil edilmez (onlar brüt kârdan SONRA düşülen
+    # operasyonel gider kalemidir, COGS değildir).
+    true_gross_profit = (gross_revenue - cogs) if (gross_revenue is not None and cogs is not None) else None
     profit_excl_vat = None
     if cogs is not None and cargo_line is not None and gross_revenue_excl_vat is not None and cogs_excl_vat is not None:
         net_hakedis_excl_vat = gross_revenue_excl_vat - (commission + service_fee) / (1 + (_sku_vat_rate(cost_row, "sale") or 0))
@@ -741,6 +748,7 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         "vatOnCost": round(vat_on_cost, 2) if vat_on_cost is not None else None,
         "profit": round(profit, 2) if profit is not None else None,
         "profitExclVat": round(profit_excl_vat, 2) if profit_excl_vat is not None else None,
+        "trueGrossProfit": round(true_gross_profit, 2) if true_gross_profit is not None else None,
         "estimated": estimated,
         "missingCost": missing_cost,
         "cargoMissing": cargo_missing,
@@ -783,7 +791,8 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
     """Satır sonuçlarını pazaryeri bazında toplayıp panelin 'by_marketplace'
     bölümü için özetler."""
     mp_stats = defaultdict(lambda: {
-        "gross_revenue": 0.0, "net_hakedis": 0.0, "gross_profit": 0.0, "cargo_total": 0.0,
+        "gross_revenue": 0.0, "net_hakedis": 0.0, "gross_profit": 0.0, "true_gross_profit": 0.0,
+        "cargo_total": 0.0,
         "cogs_reversal_total": 0.0,
         "item_count": 0, "line_count": 0,
         "lines_with_real_settlement": 0, "lines_estimated": 0,
@@ -795,6 +804,8 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
         s["net_hakedis"] += r["netHakedis"] or 0
         if r["profit"] is not None:
             s["gross_profit"] += r["profit"]
+        if r.get("trueGrossProfit") is not None:
+            s["true_gross_profit"] += r["trueGrossProfit"]
         s["cargo_total"] += r["cargo"] or 0
         s["cogs_reversal_total"] += r.get("cogsReversal") or 0
         s["item_count"] += ln["quantity"] or 0
@@ -821,6 +832,7 @@ def _aggregate_by_marketplace(lines, line_results, overhead_by_mp, return_totals
             "netRevenue": round(s["gross_revenue"] - mp_overhead.get("return_amount", 0), 2),
             "netHakedis": round(s["net_hakedis"], 2),
             "grossProfit": round(s["gross_profit"], 2),
+            "trueGrossProfit": round(s["true_gross_profit"], 2),
             "cargoTotal": round(s["cargo_total"], 2),
             "cogsReversalTotal": round(s["cogs_reversal_total"], 2),
             "stoppage": round(mp_overhead.get("stoppage", 0), 2),
@@ -890,6 +902,9 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
             cargo_missing_orders.add(ln["order_number"])
 
     gross_profit = sum(r["profit"] for r in line_results if r["profit"] is not None)  # bkz. not (asagida overhead sonrasi net_profit'e girer)
+    # FAZ 1 (15.09.2026): gerçek Brüt Kâr (Ciro - SADECE COGS) -- netProfit
+    # zincirine GİRMİYOR, sadece raporlama/gösterge amaçlı ayrı bir toplam.
+    true_gross_profit = sum(r["trueGrossProfit"] for r in line_results if r.get("trueGrossProfit") is not None)
     gross_profit_excl_vat = sum(r["profitExclVat"] for r in line_results if r["profitExclVat"] is not None)
     total_gross_revenue = sum(r["grossRevenue"] for r in line_results if r["grossRevenue"] is not None)
     total_cogs_reversal = sum(r["cogsReversal"] for r in line_results if r.get("cogsReversal") is not None)
@@ -938,6 +953,7 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
             "commission": round(total_commission, 2),
             "serviceFee": round(total_service_fee, 2),
             "grossProfit": round(gross_profit, 2),
+            "trueGrossProfit": round(true_gross_profit, 2),
             "grossProfitExclVat": round(gross_profit_excl_vat, 2),
             "cargoTotal": round(total_cargo, 2),
             "cogsReversalTotal": round(total_cogs_reversal, 2),
@@ -971,7 +987,8 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
     """
     summary = compute_profit_summary(start_dt=start_dt, end_dt=end_dt, marketplace_filter=marketplace_filter)
 
-    by_month = defaultdict(lambda: {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0, "missingCargoOrders": set(), "cargoOverdueOrders": set()})
+    by_month = defaultdict(lambda: {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0,
+                                     "trueGrossProfit": 0.0, "missingCargoOrders": set(), "cargoOverdueOrders": set()})
     for ln in summary["lines"]:
         d = ln["orderDate"]
         if not d:
@@ -982,6 +999,10 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
         m["netHakedis"] += ln["netHakedis"] or 0
         if ln["profit"] is not None:
             m["grossProfit"] += ln["profit"]
+        # FAZ 1 (15.09.2026): gerçek Brüt Kâr aylık kırılımı -- netProfit
+        # hesabını ETKİLEMİYOR, sadece ayrı bir alan olarak taşınıyor.
+        if ln.get("trueGrossProfit") is not None:
+            m["trueGrossProfit"] += ln["trueGrossProfit"]
         if ln.get("cargoMissing"):
             # B4 takibi (14.09.2026): bu ayin net kar toplami kargo faturasi
             # eksik siparisler yuzunden SESSIZCE dusuk gorunmesin diye
@@ -1011,6 +1032,11 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
             cogs_reversal = ln.get("cogsReversal") or 0
             rm["grossRevenue"] -= return_amount
             rm["grossProfit"] -= (return_amount - cogs_reversal)
+            # trueGrossProfit için de AYNI kural: iade edilen ciro geri
+            # alınıyor, geri kazanılan COGS (cogsReversal) kısmen telafi
+            # ediyor -- kargo/komisyon burada zaten YOK, o yüzden formül
+            # yukarıdaki grossProfit satırıyla birebir aynı.
+            rm["trueGrossProfit"] -= (return_amount - cogs_reversal)
 
     # NOT: Bu basitleştirilmiş aylık kırılım, dönemsel giderleri (stopaj,
     # platform hizmet bedeli, iade) SATIR TARİHİNE göre değil sipariş
@@ -1032,7 +1058,8 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
     cursor = datetime(start_dt.year, start_dt.month, 1)
     while cursor <= end_dt:
         key = cursor.strftime("%Y-%m")
-        m = by_month.get(key, {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0, "missingCargoOrders": set()})
+        m = by_month.get(key, {"grossRevenue": 0.0, "netHakedis": 0.0, "grossProfit": 0.0,
+                               "trueGrossProfit": 0.0, "missingCargoOrders": set()})
         net_profit = round(m["grossProfit"], 2)  # bkz. yukarıdaki not
         fixed_expenses = round(fixed_expenses_by_month.get(key, 0.0), 2)
         orders_missing_cargo = len(m.get("missingCargoOrders") or ())
@@ -1041,6 +1068,7 @@ def monthly_profit(start_dt, end_dt, marketplace_filter=None):
             "month": key,
             "revenue": round(m["grossRevenue"], 2),
             "grossProfit": round(m["grossProfit"], 2),
+            "trueGrossProfit": round(m["trueGrossProfit"], 2),
             "netProfit": net_profit,
             "fixedExpenses": fixed_expenses,
             "realNetProfit": round(net_profit - fixed_expenses, 2),

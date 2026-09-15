@@ -1564,6 +1564,11 @@ def _dashboard_summary_for_marketplace(start_dt, end_dt, marketplace):
             "commission": t["commission"],
             "service_fee": t["serviceFee"],
             "gross_profit": t["grossProfit"],
+            # FAZ 1 (15.09.2026): gerçek Brüt Kâr (Ciro - sadece COGS,
+            # komisyon/kargo HARİÇ) -- yukarıdaki "gross_profit" alanı adının
+            # aksine aslında katkı kârı taşıyor, bu YENİ alan eklemeli
+            # olarak eklendi, mevcut "gross_profit" davranışı DEĞİŞMEDİ.
+            "true_gross_profit": t.get("trueGrossProfit"),
             "cargo_total": t["cargoTotal"],
             "stoppage": t["stoppage"],
             "platform_service_fee": t["platformServiceFee"],

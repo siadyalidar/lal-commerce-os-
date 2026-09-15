@@ -292,6 +292,132 @@ def test_missing_cargo_does_not_crash_totals_aggregation(db):
     assert summary["data_quality"]["orders_missing_cargo_invoice"] == 1
 
 
+# ============================================================
+# 3c) FAZ 1 (15.09.2026): Gerçek Brüt Kâr (trueGrossProfit) — Ciro - SADECE
+#     COGS. Mevcut "profit"/"grossProfit" alanı (net_hakedis - cogs - cargo)
+#     BİLİNÇLİ OLARAK değiştirilmiyor/yeniden adlandırılmıyor (Net Kâr
+#     zincirinin ve mevcut 3 sayfanın kırılmaması için) — bu YENİ, EKLEMELİ
+#     bir alan. Standart muhasebe tanımı: Brüt Kâr = Ciro - Ürün Maliyeti;
+#     komisyon/kargo brüt kârın İÇİNDE değil, ondan SONRA düşülen bir
+#     operasyonel gider kalemidir (bkz. Sidar'la yapılan tanım görüşmesi).
+# ============================================================
+
+def test_line_true_gross_profit_is_revenue_minus_cogs_only(db):
+    """trueGrossProfit = grossRevenue - cogs. Komisyon/kargo dahil DEĞİL
+    (bu ikisi eski 'profit' alanında zaten düşülüyor, karıştırılmamalı)."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(340, "SKU-TGP1", 1, 100.0, 40.0, now_ms, "ONTGP1", cargo_amount=20.0)
+    upsert_settlements([
+        _settlement_row(id="tgp1-sale", barcode="SKU-TGP1", shipment_package_id=340,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONTGP1", transaction_date=now_ms),
+    ])
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+    # trueGrossProfit = 100 (ciro) - 40 (cogs) = 60 -- komisyon(10)/kargo(20) hariç
+    assert line["trueGrossProfit"] == pytest.approx(60.0)
+    # Kontrol: eski 'profit' (kontribüsyon) alanı DEĞİŞMEMİŞ olmalı
+    assert line["profit"] == pytest.approx(90 - 40 - 20)
+
+
+def test_line_true_gross_profit_none_when_cost_missing(db):
+    """Maliyet bilinmiyorsa trueGrossProfit de None kalmalı (uydurulmaz),
+    tıpkı 'profit' alanındaki davranışla tutarlı olarak."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(341, "SKU-TGP-NOCOST", 1, 100.0, None, now_ms, "ONTGPNC1", cargo_amount=20.0)
+    upsert_settlements([
+        _settlement_row(id="tgpnc-sale", barcode="SKU-TGP-NOCOST", shipment_package_id=341,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONTGPNC1", transaction_date=now_ms),
+    ])
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+    assert line["trueGrossProfit"] is None
+
+
+def test_totals_true_gross_profit_sums_lines(db):
+    """summary['totals']['trueGrossProfit'], satırların toplamı olmalı ve
+    mevcut (kontribüsyon) 'grossProfit' toplamından FARKLI olmalı --
+    komisyon+kargo dahil edilmediği için her zaman >= eski grossProfit."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(342, "SKU-TGP-T1", 1, 100.0, 40.0, now_ms, "ONTGPT1", cargo_amount=20.0)
+    upsert_settlements([
+        _settlement_row(id="tgpt1-sale", barcode="SKU-TGP-T1", shipment_package_id=342,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONTGPT1", transaction_date=now_ms),
+    ])
+    _setup_line(343, "SKU-TGP-T2", 1, 200.0, 90.0, now_ms, "ONTGPT2", cargo_amount=15.0)
+    upsert_settlements([
+        _settlement_row(id="tgpt2-sale", barcode="SKU-TGP-T2", shipment_package_id=343,
+                         raw_transaction_type="Satış", credit=200.0, commission_amount=20.0,
+                         seller_revenue=180.0, order_number="ONTGPT2", transaction_date=now_ms),
+    ])
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    # trueGrossProfit toplamı = (100-40) + (200-90) = 60 + 110 = 170
+    assert summary["totals"]["trueGrossProfit"] == pytest.approx(170.0)
+    # Eski grossProfit (kontribüsyon) = (90-10-40-20)+(180-20-90-15) ... hesapla:
+    # satır1: netHakedis(90)-cogs(40)-cargo(20)=30 ; satır2: netHakedis(180)-cogs(90)-cargo(15)=75
+    assert summary["totals"]["grossProfit"] == pytest.approx(30.0 + 75.0)
+    assert summary["totals"]["trueGrossProfit"] > summary["totals"]["grossProfit"]
+
+
+def test_by_marketplace_true_gross_profit(db):
+    """by_marketplace kırılımında da trueGrossProfit ayrı ayrı taşınmalı."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(344, "SKU-TGP-MP1", 1, 100.0, 40.0, now_ms, "ONTGPMP1", cargo_amount=20.0)
+    upsert_settlements([
+        _settlement_row(id="tgpmp1-sale", barcode="SKU-TGP-MP1", shipment_package_id=344,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONTGPMP1", transaction_date=now_ms),
+    ])
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    assert summary["by_marketplace"]["trendyol"]["trueGrossProfit"] == pytest.approx(60.0)
+
+
+def test_monthly_true_gross_profit_present(db):
+    """monthly_profit() de her ay için trueGrossProfit döndürmeli."""
+    now = datetime.now()
+    now_ms = int(now.timestamp() * 1000)
+    _setup_line(345, "SKU-TGP-M1", 1, 100.0, 40.0, now_ms, "ONTGPM1", cargo_amount=20.0)
+    upsert_settlements([
+        _settlement_row(id="tgpm1-sale", barcode="SKU-TGP-M1", shipment_package_id=345,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONTGPM1", transaction_date=now_ms),
+    ])
+    month_start = datetime(now.year, now.month, 1)
+    months = fe.monthly_profit(start_dt=month_start, end_dt=now, marketplace_filter="trendyol")
+    by_month = {m["month"]: m for m in months}
+    key = now.strftime("%Y-%m")
+    assert by_month[key]["trueGrossProfit"] == pytest.approx(60.0)
+
+
+def test_monthly_true_gross_profit_return_attributed_to_return_month(db):
+    """İade, trueGrossProfit'i de (aynı contribution-profit mantığıyla)
+    KENDİ ayına düşürmeli: revenue -return_amount, profit -(return_amount -
+    cogsReversal) -- tıpkı mevcut grossProfit davranışıyla birebir aynı
+    kural (bkz. test_monthly_profit_attributes_return_to_return_month_not_sale_month)."""
+    sale_dt = datetime(2026, 7, 2, 9, 0, 0)
+    return_dt = datetime(2026, 9, 4, 5, 0, 0)
+    sale_ms = int(sale_dt.timestamp() * 1000)
+    return_ms = int(return_dt.timestamp() * 1000)
+    _setup_line(346, "SKU-TGP-RET1", 1, 700.0, 300.0, sale_ms, "ONTGPRET1")
+    upsert_settlements([
+        _settlement_row(id="tgpret-sale", barcode="SKU-TGP-RET1", shipment_package_id=346,
+                         raw_transaction_type="Satış", credit=700.0, commission_amount=70.0,
+                         seller_revenue=630.0, order_number="ONTGPRET1", transaction_date=sale_ms),
+        _settlement_row(id="tgpret-ret", barcode="SKU-TGP-RET1", shipment_package_id=346,
+                         raw_transaction_type="İade", transaction_type="Return",
+                         debt=700.0, credit=0.0, order_number="ONTGPRET1", transaction_date=return_ms),
+    ])
+    months = fe.monthly_profit(start_dt=datetime(2026, 7, 1), end_dt=datetime(2026, 9, 30),
+                                marketplace_filter="trendyol")
+    by_month = {m["month"]: m for m in months}
+    # Temmuz: iade henüz etkilememiş -- trueGrossProfit = 700 - 300 = 400
+    assert by_month["2026-07"]["trueGrossProfit"] == pytest.approx(400.0)
+    # Eylül: tam iade (cogsReversal=300) -> düşüş = 700 - 300 = 400
+    assert by_month["2026-09"]["trueGrossProfit"] == pytest.approx(-400.0)
+
+
 def test_payout_calendar_official_overrides_estimated(db, monkeypatch):
     future_dt = datetime.now() + timedelta(days=10)
     future_ms = int(future_dt.timestamp() * 1000)
