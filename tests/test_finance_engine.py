@@ -209,11 +209,13 @@ def test_cargo_cost_hepsiburada_income_reduces_cost(db):
 # ============================================================
 
 def test_missing_cargo_invoice_flags_profit_as_none_not_zero(db):
-    """KRİTİK: kargo faturası henüz senkron olmamışsa (cargo_costs'ta karşılığı
-    yoksa), önceki davranış cargo_line'ı SESSİZCE 0.0 kabul edip profit'i YİNE
-    DE gerçek bir sayı gibi hesaplıyordu (cargoMissing=True olsa bile). Doğrusu:
-    missingCost durumundaki gibi (bkz. test_cogs_reversal_missing_cost_not_fabricated
-    ile aynı ilke) profit UYDURULMAMALI, None kalmalı."""
+    """GÜNCELLENDİ (15.09.2026, Sidar onayıyla): kargo faturası henüz senkron
+    olmamışsa artık profit None DEĞİL — CARGO_COST_FALLBACK_ESTIMATE (₺200)
+    varsayılan tahmini kullanılarak hesaplanıyor, ama cargoMissing=True VE
+    cargoEstimated=True olarak işaretlenmeye devam ediyor (sessizce
+    uydurulmuyor, açıkça tahmini olduğu belirtiliyor). Gerçek fatura
+    geldiğinde reconcile_cargo_costs() bu tahmini otomatik gerçek değerle
+    değiştirir."""
     now_ms = int(datetime.now().timestamp() * 1000)
     _setup_line(320, "SKU-NOCARGO", 1, 100.0, 40.0, now_ms, "ONNC-CARGO1", cargo_amount=None)
     upsert_settlements([
@@ -226,11 +228,11 @@ def test_missing_cargo_invoice_flags_profit_as_none_not_zero(db):
     summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
     line = summary["lines"][0]
     assert line["cargoMissing"] is True
-    assert line["cargo"] is None  # 0.0 DEĞİL — uydurulmamalı
-    assert line["profit"] is None  # kargo bilinmeden kâr UYDURULMAMALI
-    assert line["profitExclVat"] is None
-    # Bu satır toplam kâra hiç karışmamalı (None -> filtrelenir)
-    assert summary["totals"]["grossProfit"] == pytest.approx(0.0)
+    assert line["cargoEstimated"] is True
+    assert line["cargo"] == pytest.approx(fe.CARGO_COST_FALLBACK_ESTIMATE)
+    # profit = (100-10) - 40 - 200 (tahmini kargo) = -150
+    assert line["profit"] == pytest.approx(90 - 40 - fe.CARGO_COST_FALLBACK_ESTIMATE)
+    assert summary["totals"]["grossProfit"] == pytest.approx(90 - 40 - fe.CARGO_COST_FALLBACK_ESTIMATE)
 
 
 def test_cargo_present_computes_profit_normally(db):
@@ -281,9 +283,12 @@ def test_missing_cargo_does_not_crash_totals_aggregation(db):
     # ONMIX1 icin kargo yok, ONMIX2 icin var.
 
     summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
-    # 322: cargo eksik -> profit None. 323: profit = (100-10)-40-15 = 35
-    assert summary["totals"]["grossProfit"] == pytest.approx(35.0)
-    assert summary["totals"]["cargoTotal"] == pytest.approx(15.0)
+    # 322: cargo eksik -> tahmini ₺200 kullanılır, profit = (100-10)-40-200 = -150.
+    # 323: profit = (100-10)-40-15 = 35. Toplam = -150 + 35 = -115.
+    assert summary["totals"]["grossProfit"] == pytest.approx(
+        (90 - 40 - fe.CARGO_COST_FALLBACK_ESTIMATE) + 35.0
+    )
+    assert summary["totals"]["cargoTotal"] == pytest.approx(fe.CARGO_COST_FALLBACK_ESTIMATE + 15.0)
     assert summary["data_quality"]["orders_missing_cargo_invoice"] == 1
 
 
@@ -1453,7 +1458,11 @@ def test_monthly_profit_flags_incomplete_data_when_cargo_missing(db):
     assert m["incompleteData"] is True
     assert m["ordersMissingCargo"] == 1
     assert m["revenue"] == pytest.approx(350.0)
-    assert m["grossProfit"] == pytest.approx(200 - 20 - 80 - 10)
+    # OK sipariş: 200-20-80-10=90. MISS sipariş: tahmini kargo (₺200) ile
+    # 150-15-60-200=-125. Toplam = 90 + (-125) = -35.
+    assert m["grossProfit"] == pytest.approx(
+        (200 - 20 - 80 - 10) + (150 - 15 - 60 - fe.CARGO_COST_FALLBACK_ESTIMATE)
+    )
 
 
 def test_monthly_profit_complete_when_all_cargo_present(db):

@@ -94,6 +94,15 @@ from database import get_connection, get_fixed_expenses_by_month
 # ordersMissingCargo/incompleteData davranışını DEĞİŞTİRMEZ.
 CARGO_COST_MAX_OBSERVED_DELAY_DAYS = 45
 
+# GEÇİCİ TAHMİN (15.09.2026, Sidar onayıyla): kargo faturası henüz
+# senkron olmadığında Net Kâr grafikte '—'/boş görünmesin diye, gerçek
+# fatura tutarı yerine bu sabit tahmini kullanılır. cargoMissing=True VE
+# cargoEstimated=True olarak İŞARETLENMEYE DEVAM EDER (sessizce
+# uydurulmuyor, açıkça tahmini olduğu belirtiliyor) — gerçek fatura
+# reconcile_cargo_costs() ile geldiğinde bu tahmin otomatik olarak
+# gerçek değerle değişir, elle müdahale gerekmez.
+CARGO_COST_FALLBACK_ESTIMATE = 200.0
+
 # ============================================================
 # KATEGORİ EŞLEMESİ (marketplace-farkında, raw_transaction_type -> kategori)
 # ============================================================
@@ -616,7 +625,8 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         # data absence"). cargo=None kalır (0.0 DEĞİL) ve profit de (missingCost
         # ile AYNI ilkeyle) aşağıda None'a düşürülür — bkz.
         # test_missing_cargo_invoice_flags_profit_as_none_not_zero.
-        cargo_line = None
+        cargo_line = CARGO_COST_FALLBACK_ESTIMATE
+        cargo_estimated = True
         cargo_missing = True
         cargo_missing_order = ln["order_number"]
         # RC3 DÜZELTMESİ (14.09.2026): eksik kargo faturasının normal gecikme
@@ -637,6 +647,7 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         n = max(lines_per_order.get(group_key, 1), 1)
         cargo_line = cargo_total_for_order / n
         cargo_missing = False
+        cargo_estimated = False
         cargo_status = "ok"
 
     vat_missing = cost_row is None
@@ -733,6 +744,7 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         "estimated": estimated,
         "missingCost": missing_cost,
         "cargoMissing": cargo_missing,
+        "cargoEstimated": cargo_estimated,
         "cargoStatus": cargo_status,
         "vatMissing": vat_missing,
         "fromSettlementOnly": isinstance(ln, dict) and ln.get("_fromSettlementOnly", False),
