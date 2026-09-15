@@ -418,6 +418,32 @@ def test_monthly_true_gross_profit_return_attributed_to_return_month(db):
     assert by_month["2026-09"]["trueGrossProfit"] == pytest.approx(-400.0)
 
 
+def test_totals_cogs_total_present_for_waterfall(db):
+    """FAZ 3 (15.09.2026): Raporlar waterfall'unda COGS (Ürün Maliyeti) HİÇ
+    ayrı satır olarak gösterilmiyordu -- Kargo Toplamı'ndan sonra direkt
+    'Brüt Kâr'a atlıyordu, COGS sessizce içine gömülüydü. summary['totals']
+    artık ayrı bir 'cogsTotal' alanı taşımalı (satırların cogs toplamı)."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(347, "SKU-COGS-T1", 1, 100.0, 40.0, now_ms, "ONCOGST1", cargo_amount=20.0)
+    upsert_settlements([
+        _settlement_row(id="cogst1-sale", barcode="SKU-COGS-T1", shipment_package_id=347,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number="ONCOGST1", transaction_date=now_ms),
+    ])
+    _setup_line(348, "SKU-COGS-T2", 1, 200.0, 90.0, now_ms, "ONCOGST2", cargo_amount=15.0)
+    upsert_settlements([
+        _settlement_row(id="cogst2-sale", barcode="SKU-COGS-T2", shipment_package_id=348,
+                         raw_transaction_type="Satış", credit=200.0, commission_amount=20.0,
+                         seller_revenue=180.0, order_number="ONCOGST2", transaction_date=now_ms),
+    ])
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    assert summary["totals"]["cogsTotal"] == pytest.approx(40.0 + 90.0)
+    # Tutarlılık: trueGrossProfit = grossRevenue - cogsTotal olmalı
+    assert summary["totals"]["trueGrossProfit"] == pytest.approx(
+        summary["totals"]["grossRevenue"] - summary["totals"]["cogsTotal"]
+    )
+
+
 def test_payout_calendar_official_overrides_estimated(db, monkeypatch):
     future_dt = datetime.now() + timedelta(days=10)
     future_ms = int(future_dt.timestamp() * 1000)

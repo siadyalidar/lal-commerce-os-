@@ -905,6 +905,10 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
     # FAZ 1 (15.09.2026): gerçek Brüt Kâr (Ciro - SADECE COGS) -- netProfit
     # zincirine GİRMİYOR, sadece raporlama/gösterge amaçlı ayrı bir toplam.
     true_gross_profit = sum(r["trueGrossProfit"] for r in line_results if r.get("trueGrossProfit") is not None)
+    # FAZ 3 (15.09.2026): waterfall'da ayrı bir "Ürün Maliyeti (COGS)" satırı
+    # gösterebilmek için toplam COGS -- daha önce hiçbir toplamda yoktu,
+    # sadece satır bazında (r["cogs"]) vardı.
+    cogs_total = sum(r["cogs"] for r in line_results if r.get("cogs") is not None)
     gross_profit_excl_vat = sum(r["profitExclVat"] for r in line_results if r["profitExclVat"] is not None)
     total_gross_revenue = sum(r["grossRevenue"] for r in line_results if r["grossRevenue"] is not None)
     total_cogs_reversal = sum(r["cogsReversal"] for r in line_results if r.get("cogsReversal") is not None)
@@ -954,6 +958,7 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
             "serviceFee": round(total_service_fee, 2),
             "grossProfit": round(gross_profit, 2),
             "trueGrossProfit": round(true_gross_profit, 2),
+            "cogsTotal": round(cogs_total, 2),
             "grossProfitExclVat": round(gross_profit_excl_vat, 2),
             "cargoTotal": round(total_cargo, 2),
             "cogsReversalTotal": round(total_cogs_reversal, 2),

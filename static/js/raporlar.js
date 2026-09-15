@@ -39,10 +39,18 @@ function renderWaterfall(totals) {
     waterfallRow('Ciro (Brüt Gelir)', totals.grossRevenue),
     waterfallRow('İade Tutarı', -Math.abs(totals.returnAmount)),
     waterfallRow('Net Ciro', totals.netRevenue),
+    // FAZ 3 (15.09.2026): Ürün Maliyeti (COGS) artık AYRI bir satır --
+    // eskiden burada hiç görünmüyordu, sessizce 'Brüt Kâr' (aşağıdaki
+    // 'Katkı Kârı') satırının içine gömülüydü.
+    waterfallRow('Ürün Maliyeti (COGS)', -Math.abs(totals.cogsTotal)),
+    waterfallRow('Brüt Kâr', totals.trueGrossProfit, { highlight: true }),
     waterfallRow('Komisyon', -Math.abs(totals.commission)),
     waterfallRow('Hizmet Bedeli', -Math.abs(totals.serviceFee)),
     waterfallRow('Kargo Toplamı', -Math.abs(totals.cargoTotal)),
-    waterfallRow('Brüt Kâr', totals.grossProfit),
+    // ESKİDEN 'Brüt Kâr' diye adlandırılıyordu (Ciro - Komisyon - Kargo -
+    // COGS, standart tanıma uymuyordu). Gerçek Brüt Kâr artık yukarıda;
+    // bu, komisyon+kargo sonrası kalan "Katkı Kârı" -- DEĞERİ DEĞİŞMEDİ.
+    waterfallRow('Katkı Kârı', totals.grossProfit),
     waterfallRow('COGS İade Geri Alımı', totals.cogsReversalTotal),
     waterfallRow('Stopaj', -Math.abs(totals.stoppage)),
     waterfallRow('Platform Hizmet Bedeli', -Math.abs(totals.platformServiceFee)),

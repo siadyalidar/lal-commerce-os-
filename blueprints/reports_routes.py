@@ -145,10 +145,15 @@ def reports_export():
         ("İade Tutarı", t["returnAmount"]),
         ("Net Ciro", t["netRevenue"]),
         ("Net Hakediş", t["netHakedis"]),
+        # FAZ 3 (15.09.2026): COGS artık ayrı satır, gerçek Brüt Kâr eklendi;
+        # eski "Brüt Kâr" (komisyon+kargo dahil) "Katkı Kârı" olarak
+        # yeniden adlandırıldı -- DEĞERİ DEĞİŞMEDİ, sadece etiket doğrulandı.
+        ("Ürün Maliyeti (COGS)", t.get("cogsTotal")),
+        ("Brüt Kâr", t.get("trueGrossProfit")),
         ("Komisyon", t["commission"]),
         ("Hizmet Bedeli", t["serviceFee"]),
         ("Kargo Toplamı", t["cargoTotal"]),
-        ("Brüt Kâr", t["grossProfit"]),
+        ("Katkı Kârı", t["grossProfit"]),
         ("COGS İade Geri Alımı", t["cogsReversalTotal"]),
         ("Stopaj", t["stoppage"]),
         ("Platform Hizmet Bedeli", t["platformServiceFee"]),
