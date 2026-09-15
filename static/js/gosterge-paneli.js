@@ -30,7 +30,11 @@
   function renderProfitSummary(t, dq) {
     document.getElementById('stat-gross-revenue').textContent = fmtTL(t.gross_revenue);
     document.getElementById('stat-revenue').textContent = fmtTL(t.revenue);
-    document.getElementById('stat-gross-profit').textContent = fmtTL(t.gross_profit);
+    // FAZ 2 (15.09.2026): Brüt Kâr artık gerçek tanımıyla gösteriliyor
+    // (Ciro - sadece COGS, komisyon/kargo HARİÇ) -- t.gross_profit (eski,
+    // komisyon+kargo dahil "katkı kârı") ARTIK BURADA KULLANILMIYOR, ama
+    // API'den kaldırılmadı (Raporlar/AI Genel Bakış Faz 3-4'te geçecek).
+    document.getElementById('stat-gross-profit').textContent = fmtTL(t.true_gross_profit);
     document.getElementById('stat-commission').textContent = fmtTL(t.commission);
     document.getElementById('stat-service-fee').textContent = fmtTL(t.service_fee);
     document.getElementById('stat-stoppage').textContent = fmtTL(t.stoppage);
@@ -324,7 +328,8 @@
     if (!m) { el.classList.remove('is-visible'); return; }
 
     const rev = m.revenue || 0;
-    const gross = m.grossProfit || 0;
+    // FAZ 2: tooltip'teki "Brüt Kâr" satırı da gerçek tanıma geçti.
+    const gross = m.trueGrossProfit || 0;
     const net = monthlyProfitRealNet(m);
     const rows = [
       { label: 'Ciro', value: rev, color: lalToken('--lal-text-faint'), diamond: false },
@@ -543,7 +548,10 @@
     });
     const dataByKey = {
       revenue: months.map(m => m.revenue || 0),
-      grossProfit: months.map(m => m.grossProfit || 0),
+      // FAZ 2 (15.09.2026): 'grossProfit' dataset key'i artık AYLIK
+      // kırılımdaki gerçek trueGrossProfit'i (Ciro - sadece COGS) besliyor
+      // -- eski (komisyon+kargo dahil) m.grossProfit ARTIK KULLANILMIYOR.
+      grossProfit: months.map(m => m.trueGrossProfit || 0),
       netProfit: months.map(monthlyProfitRealNet),
     };
     return { labels, dataByKey };
