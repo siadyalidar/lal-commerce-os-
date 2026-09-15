@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 # GÜVENCE (05.08.2026): 'celery -A celery_app worker' komutu (PATH üzerinden,
 # 'python -m celery' OLMADAN) çalıştırıldığında, forklanan worker alt
 # süreçlerinde proje klasörü sys.path'te olmayabiliyor (macOS'ta gözlemlendi)
-# — bu da bu dosyanın altındaki 'from app import ...' gibi lazy import'ların
+# — bu da bu dosyanın altındaki 'from sync_core import ...' gibi lazy import'ların
 # "ModuleNotFoundError: No module named 'app'" ile patlamasına yol açıyordu.
 # 'python -m celery' cwd'yi otomatik ekliyordu, düz 'celery' komutu her zaman
 # eklemiyor. Bu proje klasörünü EL İLE, hangi şekilde çalıştırılırsa
@@ -53,7 +53,7 @@ def _run_locked(name, target_fn, *args, **kwargs):
 
 
 def _scheduled_sync(days, incremental_ok):
-    from app import _check_hb_credentials, _run_full_sync, _run_hb_sync
+    from sync_core import _check_hb_credentials, _run_full_sync, _run_hb_sync
 
     end_dt = datetime.now()
     start_dt = end_dt - timedelta(days=days)
@@ -132,7 +132,7 @@ def manual_sync_trendyol(self, start_ms, end_ms, incremental_ok=True):
     """Panelden 'Senkronize Et' ile tetiklenen Trendyol senkronu.
     start_ms/end_ms: epoch milisaniye (Celery JSON serializer datetime
     taşımadığı için int olarak gönderiliyor)."""
-    from app import _run_full_sync
+    from sync_core import _run_full_sync
 
     start_dt, end_dt = _epoch_ms_to_dt(start_ms), _epoch_ms_to_dt(end_ms)
     try:
@@ -144,7 +144,7 @@ def manual_sync_trendyol(self, start_ms, end_ms, incremental_ok=True):
 @celery_app.task(bind=True, max_retries=1, default_retry_delay=60)
 def manual_sync_hepsiburada(self, start_ms, end_ms, incremental_ok=True):
     """Panelden 'Senkronize Et' ile tetiklenen Hepsiburada senkronu."""
-    from app import _run_hb_sync
+    from sync_core import _run_hb_sync
 
     start_dt, end_dt = _epoch_ms_to_dt(start_ms), _epoch_ms_to_dt(end_ms)
     try:
@@ -172,7 +172,7 @@ def manual_sync_hepsiburada(self, start_ms, end_ms, incremental_ok=True):
 # celery_app.py'deki örnek satırın yorumunu kaldırmanız yeterli.
 @celery_app.task(bind=True, max_retries=1, default_retry_delay=300)
 def backfill_hb_quantities(self, limit=30):
-    from app import _check_hb_credentials, backfill_hb_settlement_only_quantities
+    from sync_core import _check_hb_credentials, backfill_hb_settlement_only_quantities
 
     if _check_hb_credentials() is not None:
         return "atlandı: Hepsiburada kimlik bilgileri tanımlı değil"
