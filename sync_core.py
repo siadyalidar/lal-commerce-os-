@@ -41,7 +41,7 @@ from database import (
 )
 from finance_engine import compute_profit_summary
 from finance_engine import monthly_profit as compute_monthly_profit
-from trendyol_finance import sync_finance_data
+from trendyol_finance import reconcile_cargo_costs, sync_finance_data
 from sync_lock import acquire_sync_lock, release_sync_lock
 
 logger = logging.getLogger("trendyol_satis")
@@ -1505,13 +1505,37 @@ def _run_full_sync(start_dt, end_dt, incremental_ok=False):
                 f"Trendyol API hatası nedeniyle atlandı (detay için worker log'una bakın)."
             )
 
+        # NOT (22.09.2026): sync_finance_data'nın dar penceresi (finance_start-end_dt)
+        # settlement->kargo faturası gecikmesini (ort. 31.6 gün, gözlemlenen maks.
+        # 39.6 gün) garanti yakalamaz -- bu yüzden nightly Celery job'ı için
+        # reconcile_cargo_costs(lookback_days=180) yazılmıştı. Ancak o job SADECE
+        # Celery beat ayaktaysa çalışır; beat 15.09-22.09 arası 7 gün sessizce ölü
+        # kaldığında hiçbir kargo verisi güncellenmedi. Bu yüzden reconciliation'ı
+        # artık HER manuel senkronizasyona da bağlıyoruz -- Celery beat'in durumundan
+        # tamamen bağımsız ikinci bir tetikleyici. İdempotent olduğu için (bkz.
+        # reconcile_cargo_costs docstring) sık çağrılması sorun yaratmaz.
+        report("Kargo mutabakatı: geniş pencere (180 gün) taranıyor…")
+        cargo_reconcile_note = ""
+        try:
+            reconcile_result = reconcile_cargo_costs(lookback_days=180, progress_cb=report)
+            cargo_reconcile_note = (
+                f" Kargo mutabakatı (180 gün): {reconcile_result['cargo_invoice_count']} fatura "
+                f"({reconcile_result['cargo_item_count']} kalem) tarandı."
+            )
+        except Exception as e:
+            # Tıpkı other_financial_failures gibi: reconciliation'daki bir hata
+            # (örn. Trendyol API hatası) normal dar-pencereli sync'in başarısını
+            # geçersiz kılmamalı -- sadece not düşülüp devam edilir.
+            logger.warning(f"[Kargo mutabakatı] Geniş pencere taraması başarısız: {e}")
+            cargo_reconcile_note = f" ⚠️ Kargo mutabakatı (180 gün) başarısız: {e}"
+
         finish_sync_progress(
             message=(
                 f"Tamamlandı ({orders_start:%d.%m.%Y} - {end_dt:%d.%m.%Y} tarandı): "
                 f"{order_count} sipariş, {line_count} satır, "
                 f"{result['settlement_count']} settlement, {result['other_financial_count']} diğer finansal kayıt, "
                 f"{result['cargo_invoice_count']} kargo faturası ({result['cargo_item_count']} kalem) senkronize edildi."
-                f"{finance_failures_note}"
+                f"{finance_failures_note}{cargo_reconcile_note}"
             )
         )
     except requests.HTTPError as e:

@@ -81,13 +81,25 @@ migrations/               → Tek seferlik DB migration script'leri (--dry-run/-
    `/api/sync-finance`, `/api/sync-hepsiburada`) — Flask process'i
    içinde `threading.Thread(daemon=True)` ile arka planda çalışır.
    **Celery worker ayakta olmasa da çalışır.** İlerleme `/api/sync-status`
-   ile poll edilir.
+   ile poll edilir. Dar-pencereli normal sync'in (`sync_finance_data`)
+   YANI SIRA, geniş pencereli kargo mutabakatını (`reconcile_cargo_costs`,
+   180 gün) da tetikler — bkz. aşağıdaki not.
 2. **Zamanlanmış senkron** — Celery Beat, her gece 03:00'te (Europe/Istanbul)
    tam senkronizasyonu tetikler (`celery_app.py` → `beat_schedule`).
    Bunun çalışması için hem `celery -A celery_app worker` hem de
    `celery -A celery_app beat` process'lerinin **ayrıca ve sürekli**
    ayakta olması gerekir — bu üretimde (production) henüz kalıcı bir
    servis olarak koşulmuyor, **açık bir altyapı borcu**.
+
+**Kargo mutabakatı çift tetikleyicili (22.09.2026):** Trendyol'un
+settlement→kargo-kesinti-faturası arasında ort. 31.6 gün / gözlemlenen
+maks. 39.6 gün gecikme oluyor; normal dar-pencereli sync bunu garanti
+yakalamaz. Bu yüzden `reconcile_cargo_costs(lookback_days=180)` hem
+Celery Beat'in gece 05:00 görevi (`nightly-cargo-reconciliation`) hem de
+**her manuel senkronizasyon** tarafından çağrılıyor — böylece Beat
+process'i (yukarıdaki altyapı borcu nedeniyle) sessizce ölse bile, her
+manuel "Verileri Senkronize Et" tıklaması kargo verisini kendi kendine
+tazeler. İdempotent olduğu için sık çağrılması sorun yaratmaz.
 
 ## Frontend / Tasarım Sistemi (LAL Design Language — "LDL")
 
