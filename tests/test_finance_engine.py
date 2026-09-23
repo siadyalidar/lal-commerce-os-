@@ -283,12 +283,14 @@ def test_missing_cargo_does_not_crash_totals_aggregation(db):
     # ONMIX1 icin kargo yok, ONMIX2 icin var.
 
     summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
-    # 322: cargo eksik -> tahmini ₺200 kullanılır, profit = (100-10)-40-200 = -150.
-    # 323: profit = (100-10)-40-15 = 35. Toplam = -150 + 35 = -115.
-    assert summary["totals"]["grossProfit"] == pytest.approx(
-        (90 - 40 - fe.CARGO_COST_FALLBACK_ESTIMATE) + 35.0
-    )
-    assert summary["totals"]["cargoTotal"] == pytest.approx(fe.CARGO_COST_FALLBACK_ESTIMATE + 15.0)
+    # 22.09.2026: 322 (SKU-MIX1) kendi SKU geçmişine sahip değil, ama DB'deki
+    # TEK bilinen gerçek kargo verisi (ONMIX2, SKU-MIX2, ₺15) global ortalamayı
+    # oluşturuyor -> SKU-MIX1 bu global ortalamaya (₺15) düşüyor, sabit ₺200'e
+    # değil (bkz. CARGO_AVG_LOOKBACK_DAYS / _load_sku_cargo_averages).
+    # 322: profit = (100-10)-40-15 = 35. 323: profit = (100-10)-40-15 = 35.
+    # Toplam = 35 + 35 = 70.
+    assert summary["totals"]["grossProfit"] == pytest.approx(35.0 + 35.0)
+    assert summary["totals"]["cargoTotal"] == pytest.approx(15.0 + 15.0)
     assert summary["data_quality"]["orders_missing_cargo_invoice"] == 1
 
 
@@ -1610,10 +1612,13 @@ def test_monthly_profit_flags_incomplete_data_when_cargo_missing(db):
     assert m["incompleteData"] is True
     assert m["ordersMissingCargo"] == 1
     assert m["revenue"] == pytest.approx(350.0)
-    # OK sipariş: 200-20-80-10=90. MISS sipariş: tahmini kargo (₺200) ile
-    # 150-15-60-200=-125. Toplam = 90 + (-125) = -35.
+    # 22.09.2026: MISS siparişi (SKU-MPCARGO-MISS) kendi SKU geçmişine sahip
+    # değil, ama DB'deki tek bilinen gerçek kargo verisi (OK siparişi, ₺10)
+    # global ortalamayı oluşturuyor -> MISS bu global ortalamaya (₺10) düşüyor,
+    # sabit ₺200'e değil (bkz. CARGO_AVG_LOOKBACK_DAYS).
+    # OK sipariş: 200-20-80-10=90. MISS sipariş: 150-15-60-10=65. Toplam=155.
     assert m["grossProfit"] == pytest.approx(
-        (200 - 20 - 80 - 10) + (150 - 15 - 60 - fe.CARGO_COST_FALLBACK_ESTIMATE)
+        (200 - 20 - 80 - 10) + (150 - 15 - 60 - 10)
     )
 
 
@@ -1684,3 +1689,143 @@ def test_monthly_profit_missing_cargo_order_counted_once_for_multi_line_order(db
     m = by_month[key]
 
     assert m["ordersMissingCargo"] == 1
+
+
+# ============================================================
+# 3d) ÜRÜN BAZLI KARGO TAHMİNİ (22.09.2026, Sidar onayıyla) —
+#     CARGO_COST_FALLBACK_ESTIMATE (sabit ₺200) yerine, eksik kargo
+#     faturası için önce SKU'nun kendi son 90 günlük gerçek kargo
+#     ortalaması, sonra tüm SKU'ların genel ortalaması, en son çare
+#     olarak sabit tahmin kullanılır. Fatura geldiğinde
+#     reconcile_cargo_costs() zaten otomatik gerçek değere geçiyor --
+#     bu davranış BU testlerin konusu DEĞİL, ayrıca test edilmiyor
+#     çünkü değişmedi (bkz. cargo_by_spid/cargo_by_order_number'ın
+#     cargo_total_for_order is not None dalı).
+# ============================================================
+
+def test_missing_cargo_uses_own_sku_historical_average_when_available(db):
+    """Eksik kargolu bir siparişin SKU'su, YAKIN GEÇMİŞTE (90 gün içinde)
+    kendi gerçek kargo verisine sahipse, o SKU'ya özgü ortalama kullanılmalı
+    -- global ortalama ya da sabit ₺200 DEĞİL."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    # SKU-A'nın GEÇMİŞTE iki gerçek kargo verisi var: ₺30 ve ₺50 -> ort. ₺40.
+    _setup_line(340, "SKU-A", 1, 100.0, 40.0, now_ms, "ONHIST-A1", cargo_amount=30.0)
+    _setup_line(341, "SKU-A", 1, 100.0, 40.0, now_ms, "ONHIST-A2", cargo_amount=50.0)
+    # SKU-B'nin de gerçek kargo verisi var ama farklı (₺10) -- global ortalamayı
+    # bozması engellenmeli: SKU-A'nın YENİ eksik siparişi kendi ortalamasını
+    # (₺40) kullanmalı, global karışımı (₺30, ₺50, ₺10 -> ort. ₺30) DEĞİL.
+    _setup_line(342, "SKU-B", 1, 100.0, 40.0, now_ms, "ONHIST-B1", cargo_amount=10.0)
+    # SKU-A'nın YENİ siparişi -- kargo faturası HENÜZ YOK.
+    _setup_line(343, "SKU-A", 1, 100.0, 40.0, now_ms, "ONNEW-A1", cargo_amount=None)
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    new_line = next(ln for ln in summary["lines"] if ln["orderNumber"] == "ONNEW-A1")
+
+    assert new_line["cargoMissing"] is True
+    assert new_line["cargoEstimated"] is True
+    assert new_line["cargo"] == pytest.approx(40.0)  # (30+50)/2, global (₺30) DEĞİL
+
+
+def test_missing_cargo_falls_back_to_global_average_for_new_sku(db):
+    """SKU'nun kendi kargo geçmişi YOKSA (yeni ürün), tüm SKU'ların genel
+    ortalamasına düşülmeli -- sabit ₺200 DEĞİL."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(344, "SKU-OLD1", 1, 100.0, 40.0, now_ms, "ONGLOB-1", cargo_amount=20.0)
+    _setup_line(345, "SKU-OLD2", 1, 100.0, 40.0, now_ms, "ONGLOB-2", cargo_amount=40.0)
+    # SKU-YENI'nin HİÇ geçmişi yok, kargo faturası da eksik.
+    _setup_line(346, "SKU-YENI", 1, 100.0, 40.0, now_ms, "ONGLOB-NEW", cargo_amount=None)
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    new_line = next(ln for ln in summary["lines"] if ln["orderNumber"] == "ONGLOB-NEW")
+
+    assert new_line["cargoMissing"] is True
+    assert new_line["cargo"] == pytest.approx(30.0)  # (20+40)/2 genel ortalama
+
+
+def test_missing_cargo_falls_back_to_flat_estimate_when_no_history_at_all(db):
+    """Veritabanında HİÇ bilinen (gerçek) kargo verisi yoksa (örn. taze
+    kurulum), zincirin en sonundaki sabit CARGO_COST_FALLBACK_ESTIMATE
+    kullanılmaya devam etmeli -- regresyon yok."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    _setup_line(347, "SKU-ISOLATED", 1, 100.0, 40.0, now_ms, "ONISO-1", cargo_amount=None)
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    line = summary["lines"][0]
+
+    assert line["cargo"] == pytest.approx(fe.CARGO_COST_FALLBACK_ESTIMATE)
+
+
+def test_missing_cargo_average_ignores_data_older_than_lookback_window(db):
+    """CARGO_AVG_LOOKBACK_DAYS'ten (90 gün) daha eski gerçek kargo verisi,
+    ortalamaya KATILMAMALI -- güncel kargo fiyatlarını yansıtma amacı
+    (Sidar'ın seçtiği seçenek) bozulmasın."""
+    now = datetime.now()
+    now_ms = int(now.timestamp() * 1000)
+    old_ms = int((now - timedelta(days=fe.CARGO_AVG_LOOKBACK_DAYS + 10)).timestamp() * 1000)
+    # SKU-ESKI'nin TEK gerçek kargo verisi pencerenin DIŞINDA (100 gün önce, ₺999).
+    _setup_line(348, "SKU-ESKI", 1, 100.0, 40.0, old_ms, "ONOLD-1", cargo_amount=999.0)
+    # Aynı SKU'nun YENİ siparişi -- kargo eksik.
+    _setup_line(349, "SKU-ESKI", 1, 100.0, 40.0, now_ms, "ONNEWOLD-1", cargo_amount=None)
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    new_line = next(ln for ln in summary["lines"] if ln["orderNumber"] == "ONNEWOLD-1")
+
+    # Pencere dışındaki ₺999 hiçbir zaman kullanılmamalı (ne SKU ne global
+    # ortalamada) -- hiç başka geçmiş veri olmadığı için sabit tahmine düşer.
+    assert new_line["cargo"] == pytest.approx(fe.CARGO_COST_FALLBACK_ESTIMATE)
+
+
+def test_missing_cargo_multi_sku_order_splits_summed_sku_averages_equally(db):
+    """Birden fazla FARKLI SKU içeren bir siparişte kargo eksikse, her
+    satırın KENDİ SKU ortalaması değil, siparişteki TÜM satırların SKU
+    ortalamaları TOPLANIP satır sayısına EŞİT bölünmeli (Sidar'ın seçtiği
+    -- mevcut gerçek-kargo /n bölme mantığıyla tutarlı)."""
+    now_ms = int(datetime.now().timestamp() * 1000)
+    # SKU-X geçmişte ₺100, SKU-Y geçmişte ₺60 ortalamaya sahip.
+    _setup_line(350, "SKU-X", 1, 100.0, 40.0, now_ms, "ONHISTX-1", cargo_amount=100.0)
+    _setup_line(351, "SKU-Y", 1, 100.0, 40.0, now_ms, "ONHISTY-1", cargo_amount=60.0)
+
+    # Yeni sipariş: SKU-X + SKU-Y bir arada, kargo eksik.
+    spid = 352
+    order_number = "ONMULTIEST-1"
+    upsert_orders([{
+        "shipment_package_id": spid, "marketplace": "trendyol", "order_number": order_number,
+        "order_date": now_ms, "status": "Delivered", "customer": "Test",
+        "cargo_provider": "Aras", "gross_amount": 200.0,
+        "discount_amount": 0.0, "net_amount": 200.0,
+    }])
+    upsert_order_lines([
+        {"shipment_package_id": spid, "marketplace": "trendyol", "barcode": "SKU-X",
+         "merchant_sku": "SKU-X", "product_name": "Urun X", "quantity": 1,
+         "line_unit_price": 100.0, "commission_rate": 10.0},
+        {"shipment_package_id": spid, "marketplace": "trendyol", "barcode": "SKU-Y",
+         "merchant_sku": "SKU-Y", "product_name": "Urun Y", "quantity": 1,
+         "line_unit_price": 100.0, "commission_rate": 10.0},
+    ])
+    upsert_product_costs([
+        {"sku": "SKU-X", "product_name": "Urun X", "sale_price_incl_vat": 100.0,
+         "sale_price_excl_vat": 100.0 / 1.2, "cost_incl_vat": 40.0, "cost_excl_vat": 40.0 / 1.1},
+        {"sku": "SKU-Y", "product_name": "Urun Y", "sale_price_incl_vat": 100.0,
+         "sale_price_excl_vat": 100.0 / 1.2, "cost_incl_vat": 40.0, "cost_excl_vat": 40.0 / 1.1},
+    ])
+    upsert_settlements([
+        _settlement_row(id="multiest-x-sale", barcode="SKU-X", shipment_package_id=spid,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number=order_number, transaction_date=now_ms),
+        _settlement_row(id="multiest-y-sale", barcode="SKU-Y", shipment_package_id=spid,
+                         raw_transaction_type="Satış", credit=100.0, commission_amount=10.0,
+                         seller_revenue=90.0, order_number=order_number, transaction_date=now_ms),
+    ])
+    # DİKKAT: bu sipariş için hiç kargo faturası eklenmedi.
+
+    summary = fe.compute_profit_summary(days=1, marketplace_filter="trendyol")
+    multi_lines = [ln for ln in summary["lines"] if ln["orderNumber"] == order_number]
+    assert len(multi_lines) == 2
+    # (SKU-X ortalaması 100 + SKU-Y ortalaması 60) / 2 satır = 80 -- HER İKİ
+    # satıra da AYNI (80) değer verilmeli, kendi bireysel ortalamaları (100/60)
+    # DEĞİL.
+    for ln in multi_lines:
+        assert ln["cargo"] == pytest.approx(80.0)
+
+
+

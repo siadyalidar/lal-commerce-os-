@@ -103,6 +103,17 @@ CARGO_COST_MAX_OBSERVED_DELAY_DAYS = 45
 # gerçek değerle değişir, elle müdahale gerekmez.
 CARGO_COST_FALLBACK_ESTIMATE = 200.0
 
+# ÜRÜN BAZLI KARGO TAHMİNİ (22.09.2026, Sidar onayıyla): sabit ₺200 tahmini,
+# ürünler arası gerçek kargo bedeli farkını (gözlemlenen ₺93-₺197 aralığı,
+# muhtemelen desi/ağırlığa bağlı) yok sayıyordu. Artık eksik kargo faturası
+# için önce SKU'nun kendi son CARGO_AVG_LOOKBACK_DAYS günlük gerçek kargo
+# ortalaması kullanılıyor; o SKU'nun hiç geçmişi yoksa (yeni ürün) TÜM
+# ürünlerin aynı pencheredeki genel ortalamasına düşülüyor; o da yoksa
+# (örn. taze kurulum, hiç gerçek kargo verisi yok) son çare olarak yine
+# CARGO_COST_FALLBACK_ESTIMATE kullanılıyor. Zincir: sku_avg -> global_avg
+# -> CARGO_COST_FALLBACK_ESTIMATE. Bkz. _load_sku_cargo_averages.
+CARGO_AVG_LOOKBACK_DAYS = 90
+
 # ============================================================
 # KATEGORİ EŞLEMESİ (marketplace-farkında, raw_transaction_type -> kategori)
 # ============================================================
@@ -447,6 +458,60 @@ def _load_cargo_by_order(conn):
     return by_spid, by_order_number
 
 
+def _load_sku_cargo_averages(conn, cargo_by_spid, cargo_by_order_number,
+                              lookback_days=CARGO_AVG_LOOKBACK_DAYS):
+    """Son `lookback_days` gün içinde, kargo maliyeti BİLİNEN (fatura zaten
+    senkron olmuş) siparişlerden, her SKU için satır-başına ortalama gerçek
+    kargo maliyetini hesaplar (22.09.2026, Sidar onayıyla — bkz.
+    CARGO_AVG_LOOKBACK_DAYS docstring'i).
+
+    Kargo maliyeti bilinen bir grup (shipment_package_id veya order_number)
+    içindeki her satır, o grubun toplam kargo maliyetinin satır sayısına
+    eşit bölünmüş payını "kendi" kargo maliyeti olarak sayar — tıpkı gerçek
+    kâr hesabındaki cargo_total_for_order / n mantığıyla birebir tutarlı.
+
+    Dönen: (sku_averages: dict[str, float], global_average: float|None)
+    global_average, hiç geçmişi olmayan bir SKU için ikincil fallback'tir;
+    hiç bilinen kargo verisi yoksa (örn. taze kurulum) None döner ve
+    çağıran taraf CARGO_COST_FALLBACK_ESTIMATE'e düşer.
+    """
+    start_ms = int((datetime.now() - timedelta(days=lookback_days)).timestamp() * 1000)
+    rows = conn.execute("""
+        SELECT ol.marketplace, ol.shipment_package_id, o.order_number,
+               ol.merchant_sku, ol.barcode
+        FROM order_lines ol
+        JOIN orders o ON o.shipment_package_id = ol.shipment_package_id
+                      AND o.marketplace = ol.marketplace
+        WHERE o.order_date >= ?
+    """, (start_ms,)).fetchall()
+
+    lines_per_group = defaultdict(int)
+    for r in rows:
+        group_key = (r["marketplace"], r["shipment_package_id"] if r["shipment_package_id"] is not None
+                     else f"order:{r['order_number']}")
+        lines_per_group[group_key] += 1
+
+    sku_costs = defaultdict(list)
+    for r in rows:
+        spid = r["shipment_package_id"]
+        cargo_total = cargo_by_spid.get((r["marketplace"], spid))
+        if cargo_total is None:
+            cargo_total = cargo_by_order_number.get((r["marketplace"], r["order_number"]))
+        if cargo_total is None:
+            continue  # bu satırın da kargo faturası eksik -- ortalamaya katılamaz
+        group_key = (r["marketplace"], spid if spid is not None else f"order:{r['order_number']}")
+        n = max(lines_per_group.get(group_key, 1), 1)
+        effective_sku = r["merchant_sku"] or r["barcode"]
+        if effective_sku:
+            sku_costs[effective_sku].append(cargo_total / n)
+
+    sku_averages = {sku: sum(vals) / len(vals) for sku, vals in sku_costs.items()}
+    all_vals = [v for vals in sku_costs.values() for v in vals]
+    global_average = (sum(all_vals) / len(all_vals)) if all_vals else None
+
+    return sku_averages, global_average
+
+
 def _sku_vat_rate(cost_row, side="cost"):
     if side == "cost":
         incl, excl = cost_row["cost_incl_vat"], cost_row["cost_excl_vat"]
@@ -503,6 +568,9 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
         other_totals = _load_other_financial_totals(conn, start_ms, end_ms, order_scope=order_scope)
         costs = _load_costs(conn)
         cargo_by_spid, cargo_by_order_number = _load_cargo_by_order(conn)
+        sku_cargo_averages, cargo_global_average = _load_sku_cargo_averages(
+            conn, cargo_by_spid, cargo_by_order_number
+        )
         barcode_sku_map = _load_barcode_sku_map(conn)
 
     known_keys = {(ln["marketplace"], ln["shipment_package_id"], ln["barcode"]) for ln in lines}
@@ -517,6 +585,23 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
         group_key = (ln["marketplace"], ln["shipment_package_id"] if ln["shipment_package_id"] is not None
                      else f"order:{ln['order_number']}")
         lines_per_order[group_key] += 1
+
+    # 22.09.2026: her grup (shipment_package_id/order) için, o gruptaki
+    # satırların SKU bazlı tahmini kargo maliyetlerinin TOPLAMI -- kargo
+    # faturası eksikse cargo_total_for_order YERİNE bu kullanılır, sonra
+    # aynı /n mantığıyla satırlara bölünür (bkz. _build_line_result).
+    # Zincir öncelik sırası SKU -> global -> sabit tahmin, satır bazında.
+    cargo_estimate_by_group = defaultdict(float)
+    for ln in lines:
+        group_key = (ln["marketplace"], ln["shipment_package_id"] if ln["shipment_package_id"] is not None
+                     else f"order:{ln['order_number']}")
+        effective_sku_for_cargo = ln["merchant_sku"] or ln["barcode"]
+        per_line_estimate = sku_cargo_averages.get(effective_sku_for_cargo)
+        if per_line_estimate is None:
+            per_line_estimate = cargo_global_average
+        if per_line_estimate is None:
+            per_line_estimate = CARGO_COST_FALLBACK_ESTIMATE
+        cargo_estimate_by_group[group_key] += per_line_estimate
 
     return {
         "lines": lines,
@@ -534,12 +619,13 @@ def _gather_summary_inputs(start_ms, end_ms, marketplace_filter, include_settlem
         "costs": costs,
         "cargo_by_spid": cargo_by_spid,
         "cargo_by_order_number": cargo_by_order_number,
+        "cargo_estimate_by_group": cargo_estimate_by_group,
         "lines_per_order": lines_per_order,
     }
 
 
 def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by_order_number, lines_per_order,
-                        settlement_totals_in_range=None):
+                        settlement_totals_in_range=None, cargo_estimate_by_group=None):
     """Tek bir sipariş satırı için Ciro/Komisyon/KDV/Kâr hesabını yapar.
     Döner: (line_result dict, estimated: bool, missing_cost_sku: str|None,
             cargo_missing_order_number: str|None)
@@ -626,6 +712,12 @@ def _build_line_result(ln, settlement_totals_all, costs, cargo_by_spid, cargo_by
         # ile AYNI ilkeyle) aşağıda None'a düşürülür — bkz.
         # test_missing_cargo_invoice_flags_profit_as_none_not_zero.
         cargo_line = CARGO_COST_FALLBACK_ESTIMATE
+        if cargo_estimate_by_group is not None:
+            group_key = (ln["marketplace"], spid if spid is not None else f"order:{ln['order_number']}")
+            n = max(lines_per_order.get(group_key, 1), 1)
+            group_total_estimate = cargo_estimate_by_group.get(group_key)
+            if group_total_estimate is not None:
+                cargo_line = group_total_estimate / n
         cargo_estimated = True
         cargo_missing = True
         cargo_missing_order = ln["order_number"]
@@ -890,6 +982,7 @@ def compute_profit_summary(days=None, start_dt=None, end_dt=None, marketplace_fi
             ln, data["settlement_totals_all"], data["costs"],
             data["cargo_by_spid"], data["cargo_by_order_number"], data["lines_per_order"],
             settlement_totals_in_range=data["settlement_totals_in_range"],
+            cargo_estimate_by_group=data["cargo_estimate_by_group"],
         )
         line_results.append(line_result)
         if estimated:

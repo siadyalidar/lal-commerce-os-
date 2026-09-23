@@ -101,6 +101,31 @@ process'i (yukarıdaki altyapı borcu nedeniyle) sessizce ölse bile, her
 manuel "Verileri Senkronize Et" tıklaması kargo verisini kendi kendine
 tazeler. İdempotent olduğu için sık çağrılması sorun yaratmaz.
 
+**Kalıcı kargo boşlukları (22.09.2026):** Bazı siparişler Trendyol
+tarafında HİÇBİR ZAMAN bir kargo kesinti faturasına dahil edilmeyebiliyor
+(gecikme değil, kalıcı boşluk — 44 fatura canlı API'den tek tek taranarak
+doğrulandı, öncesi/sonrası dolu bir sipariş aralığı tamamen atlanmış
+bulundu). Bu durumda sistem sonsuza kadar beklemek yerine aşağıdaki
+kargo tahmini zincirine düşer; kod tarafında düzeltilecek bir şey yoktur,
+Trendyol Satıcı Destek'e bildirilmesi gerekir.
+
+**Ürün bazlı kargo tahmini (22.09.2026, Sidar onayıyla):** Kargo faturası
+eksik bir satırın Net Kâr'ı artık sabit bir ₺200 tahmini yerine, üç
+kademeli bir zincirle hesaplanıyor (`finance_engine.py` →
+`_load_sku_cargo_averages`, `CARGO_AVG_LOOKBACK_DAYS=90`):
+1. SKU'nun kendi son 90 günlük gerçek kargo ortalaması (varsa)
+2. Yoksa (yeni ürün), aynı pencheredeki TÜM SKU'ların genel ortalaması
+3. O da yoksa (taze kurulum, hiç gerçek kargo verisi yok),
+   `CARGO_COST_FALLBACK_ESTIMATE` (₺200) sabit tahmini
+
+Birden fazla farklı SKU içeren bir siparişte kargo eksikse, siparişteki
+tüm satırların SKU ortalamaları toplanıp satır sayısına eşit bölünür —
+gerçek kargo maliyetinin bölüştürülme mantığıyla birebir tutarlı. Gerçek
+fatura geldiğinde (yukarıdaki reconciliation ile) tahmin otomatik olarak
+gerçek değerle değişir, ayrıca bir "backfill" adımına gerek yoktur —
+`cargoMissing`/`cargoEstimated` flag'leri her zaman tahminî olduğunu
+açıkça işaretler, hiçbir zaman sessizce gerçekmiş gibi sunulmaz.
+
 ## Frontend / Tasarım Sistemi (LAL Design Language — "LDL")
 
 Uygulama bir **çok sayfalı Flask uygulaması (MPA)** — React/SPA yok,
