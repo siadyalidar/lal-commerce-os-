@@ -38,15 +38,25 @@
   // - profitEstimated true ise (gerçek settlement henüz oluşmamış, tahmini
   //   komisyonla hesaplanmış) rakamın yanına '~' ön eki ve bir tooltip eklenir —
   //   dashboard'daki "tahmini komisyonla hesaplandı" uyarısıyla tutarlı.
+  // - cargoEstimated true ise (27.09.2026, Sidar onayıyla): kargo faturası
+  //   henüz Trendyol/HB'den gelmemiş, finance_engine.py'nin SKU bazlı geçmiş
+  //   ortalamasıyla (ya da hiç geçmiş yoksa sabit tahminle) hesaplanmış demektir
+  //   — bu da '~' ön ekini tetikler. profitEstimated VE cargoEstimated aynı anda
+  //   true olabilir; tooltip ikisini de tek tek belirtir.
   function netProfitCell(o) {
     if (o.netProfit === null || o.netProfit === undefined) {
       return '<span style="color:var(--text-muted);" title="Bu sipariş için ürün maliyeti tanımlı değil, kâr hesaplanamıyor.">—</span>';
     }
     const cls = o.netProfit > 0 ? 'lal-profit-pos' : (o.netProfit < 0 ? 'lal-profit-neg' : '');
-    const prefix = o.profitEstimated ? '~' : '';
-    const title = o.profitEstimated
-      ? 'Tahmini: bu sipariş için Finans API\'de henüz gerçek settlement kaydı yok, satır fiyatı ve tahmini komisyon oranıyla hesaplandı.'
-      : 'Gerçek: Finans API settlement kaydına göre hesaplandı.';
+    const reasons = [];
+    if (o.profitEstimated) {
+      reasons.push('Finans API\'de henüz gerçek settlement kaydı yok, satır fiyatı ve tahmini komisyon oranıyla hesaplandı.');
+    }
+    if (o.cargoEstimated) {
+      reasons.push('Kargo faturası henüz senkron olmadı, bu ürünün (veya genel) geçmiş ortalama kargo bedeliyle tahmin edildi — fatura gelince otomatik güncellenir.');
+    }
+    const prefix = (o.profitEstimated || o.cargoEstimated) ? '~' : '';
+    const title = reasons.length ? `Tahmini: ${reasons.join(' ')}` : 'Gerçek: Finans API settlement kaydına ve gerçek kargo faturasına göre hesaplandı.';
     return `<span class="${cls}" title="${title}">${prefix}${fmtTL2(o.netProfit)}</span>`;
   }
 

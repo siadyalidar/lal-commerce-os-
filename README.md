@@ -126,6 +126,20 @@ gerçek değerle değişir, ayrıca bir "backfill" adımına gerek yoktur —
 `cargoMissing`/`cargoEstimated` flag'leri her zaman tahminî olduğunu
 açıkça işaretler, hiçbir zaman sessizce gerçekmiş gibi sunulmaz.
 
+**Siparişler sayfası artık tahmini Net Kâr'ı gösteriyor (27.09.2026,
+Sidar onayıyla — önceki B4 kararının üzerine):** 09.09.2026'daki B4
+düzeltmesi, kargo faturası eksikse Siparişler sayfasındaki sipariş bazlı
+Net Kâr'ı SESSİZCE None'a ("—") düşürüyordu — o tarihte kargo tahmini
+sabit ve kaba (₺200) olduğu için bu bilinçli bir tercihti. Artık SKU bazlı
+ortalama isabetli olduğu için, `blueprints/order_routes.py`'deki
+`_build_order_profit_map()` bu tahmini de Net Kâr'a dahil ediyor — ama
+`cargoEstimated=True` ile açıkça işaretleyerek: `static/js/siparisler.js`
+bunu `profitEstimated` ile aynı `~` önekiyle (ve ayrı bir tooltip
+metniyle) gösterir. `missingCost` (ürün maliyeti tanımsız) hâlâ en
+öncelikli kural: o durumda kargo tahmini olsa bile Net Kâr yine None
+kalır — iki ayrı "sessizce veri uydurmama" ilkesi birbirinden bağımsız
+çalışır.
+
 ## Frontend / Tasarım Sistemi (LAL Design Language — "LDL")
 
 Uygulama bir **çok sayfalı Flask uygulaması (MPA)** — React/SPA yok,

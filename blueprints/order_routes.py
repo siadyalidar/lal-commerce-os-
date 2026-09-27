@@ -37,13 +37,17 @@ bp = Blueprint("order_routes", __name__)
 # (marketplace + order_number birlikte, aynı sipariş numarası teorik olarak
 # iki pazaryerinde çakışabilir diye marketplace de anahtara dahil).
 #
-# 'profitEstimated': o siparişin en az bir satırı henüz gerçek settlement
-# kaydına sahip değilse (finance_engine'in 'estimated' bayrağı) True olur —
-# yani rakam Trendyol/HB'nin finans API'sinden gelen gerçek hakediş yerine
-# satır fiyatı × tahmini komisyon oranıyla hesaplanmış demektir.
-# 'profitMissingCost': en az bir satırda ürün maliyeti (product_costs) tanımlı
-# değilse True olur — bu durumda o siparişin profit'i None (bilinmiyor) kalır,
-# yanlışlıkla eksik bir rakam gösterilmez.
+# DEĞİŞTİ (27.09.2026, Sidar onayıyla): B4 (09.09.2026), kargo faturası eksikse
+# (cargoMissing=True) sipariş netProfit'ini SESSİZCE None'a düşürüyordu -- o
+# tarihte finance_engine sabit ₺200 tahmini kullanıyordu ve Sidar bunu
+# Siparişler sayfasında göstermek istememişti. Artık finance_engine.py SKU
+# bazlı geçmiş ortalama ile isabetli bir tahmin ürettiği için (bkz.
+# CARGO_AVG_LOOKBACK_DAYS), bu tahmini netProfit'e DAHİL EDİYORUZ -- ama asla
+# sessizce gerçekmiş gibi sunmuyoruz: cargoEstimated=True ile açıkça
+# işaretleniyor (UI'da '~' öneki + tooltip, bkz. static/js/siparisler.js).
+# missingCost hâlâ EN ÖNCELİKLİ: ürün maliyeti bilinmiyorsa (kargo tahmini
+# olsa bile) netProfit None kalmaya devam ediyor -- bkz.
+# test_order_profit_map_none_when_missing_cost_even_if_cargo_also_missing.
 def _build_order_profit_map(start_dt, end_dt, marketplace_filter=None):
     summary = compute_profit_summary(start_dt=start_dt, end_dt=end_dt, marketplace_filter=marketplace_filter)
 
@@ -57,22 +61,23 @@ def _build_order_profit_map(start_dt, end_dt, marketplace_filter=None):
         a = agg[key]
         if ln.get("missingCost"):
             a["hasMissingCost"] = True
-        # B4 DÜZELTMESİ (09.09.2026): kargo faturası eksikse (cargoMissing=True)
-        # finance_engine artık o satırın profit'ini None döndürüyor -- bu satır
-        # sessizce 0 katkı yapmış gibi ATLANMAMALI, sipariş toplamı da None
-        # olmalı (missingCost ile AYNI ilke, bkz. test_order_profit_map_none_when_cargo_missing).
-        elif ln.get("cargoMissing"):
-            a["hasCargoMissing"] = True
         elif ln.get("profit") is not None:
+            # 27.09.2026: cargoMissing olsa da profit BURAYA GİRER, çünkü
+            # finance_engine artık cargo_line'ı asla None bırakmıyor (SKU/
+            # global ortalama/sabit tahmin zinciri) -- profit sadece cogs
+            # bilinmiyorsa None döner (missingCost dalı yukarıda ele alındı).
             a["profit"] += ln["profit"]
+        if ln.get("cargoMissing"):
+            a["hasCargoMissing"] = True
         if ln.get("estimated"):
             a["hasEstimatedSettlement"] = True
 
     result = {}
     for key, a in agg.items():
         result[key] = {
-            "netProfit": None if (a["hasMissingCost"] or a["hasCargoMissing"]) else round(a["profit"], 2),
+            "netProfit": None if a["hasMissingCost"] else round(a["profit"], 2),
             "profitEstimated": a["hasEstimatedSettlement"],
+            "cargoEstimated": a["hasCargoMissing"],
         }
     return result
 
@@ -334,6 +339,7 @@ def api_orders():
             "lines": lines_by_spid.get((r["marketplace"], r["shipment_package_id"]), []),
             "netProfit": profit_info.get("netProfit"),
             "profitEstimated": profit_info.get("profitEstimated", False),
+            "cargoEstimated": profit_info.get("cargoEstimated", False),
         })
 
     return jsonify({
