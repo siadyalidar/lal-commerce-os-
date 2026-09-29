@@ -455,3 +455,7 @@ html.rv-on .rv.rv-in { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
 .ai2-chat-panel { height: auto; max-height: none; }
 .ai2-chat-panel .ai2-chat-body { flex: 0 1 auto; max-height: 420px; }
 .ai2-chat-panel .ai2-chat-input-row { margin-top: var(--lal-space-4); }
+
+a.lal-logout { display: block; padding: 2px 13px 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; text-decoration: none; color: var(--lal-text-muted, var(--lal-text-main)); opacity: .6; }
+a.lal-logout:hover { opacity: 1; text-decoration: underline; }
+.lal-sidebar.is-collapsed a.lal-logout { display: none; }
