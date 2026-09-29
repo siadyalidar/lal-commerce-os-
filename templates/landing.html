@@ -41,10 +41,19 @@ h2{font-weight:300;font-size:clamp(2.7rem,9vw,8.6rem);line-height:.98;letter-spa
 footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}footer a{text-decoration:none;border-bottom:1px solid var(--line)}
 @media (max-width:720px){.stage{height:380vh}.row{grid-template-columns:1fr}.hud{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto}.pin::after{background:linear-gradient(to top,var(--bg) 0%,transparent 40%)}}
 @media (prefers-reduced-motion:reduce){.row{opacity:1;transform:none;transition:none}}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+.hd{background:linear-gradient(to bottom,var(--bg) 35%,transparent);align-items:center}
+.hd a.brand{border:0;padding:0;font-size:14px}
+.hd-links{display:flex;gap:clamp(16px,3vw,36px)}
+.hd-links a{border:0;padding:0;color:var(--mute);font-weight:400}
+.hd-links a:hover{color:var(--ink)}
+.hd a.go{border:1px solid var(--ink);padding:8px 16px;border-radius:999px}
+@media (max-width:720px){.hd-links{display:none}}
 </style>
 </head>
 <body>
-<header class="hd"><div><b>LAL</b><span>Commerce OS</span></div><a href="/">Panele giriş</a></header>
+<header class="hd"><a class="brand" href="/"><b>LAL</b><span>Commerce OS</span></a><nav class="hd-links" aria-label="Bölümler"><a href="#stage">Nasıl çalışır</a><a href="#ozellikler">Özellikler</a><a href="#veri">Veri</a><a href="#sss">SSS</a></nav><a class="go" href="{% if session.get('lal_auth') %}/panel{% else %}/giris{% endif %}">{% if session.get('lal_auth') %}Panele git{% else %}Giriş yap{% endif %}</a></header>
 
 <section class="stage" id="stage" aria-label="LAL nasıl çalışır">
 <div class="pin">
@@ -73,7 +82,7 @@ footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}footer a{text-
 </div>
 </section>
 
-<section class="sec">
+<section class="sec" id="ozellikler">
 <h2 class="big">Siparişten borca, hepsi aynı defterde.</h2>
 <div class="row"><h3>Siparişler ve iadeler</h3><p>Trendyol ve Hepsiburada siparişleri, iadeler ve durumlar tek listede görünür.</p></div>
 <div class="row"><h3>Finans</h3><p>Komisyon, kargo ve giderler düşülür; ekranda gerçek net kâr yer alır.</p></div>
@@ -81,9 +90,23 @@ footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}footer a{text-
 <div class="row"><h3>Toptancı borcu</h3><p>Satışla biriken borç, yapılan ödemelerle azalan bakiye olarak takip edilir.</p></div>
 </section>
 
+<section class="sec" id="veri">
+<h2 class="big">Veriler bu bilgisayarda kalır.</h2>
+<div class="row"><h3>Kendi API anahtarların</h3><p>Trendyol ve Hepsiburada bilgileri yalnızca kurulum yapılan bilgisayardaki .env dosyasında saklanır.</p></div>
+<div class="row"><h3>Doğrudan pazaryerinden</h3><p>Siparişler ve finans kayıtları satıcı API'lerinden çekilir ve yerel veritabanında tutulur.</p></div>
+<div class="row"><h3>Otomatik yenileme</h3><p>Manuel senkronizasyonun yanında her gece 03:00'te otomatik senkronizasyon çalışır.</p></div>
+</section>
+
+<section class="sec" id="sss">
+<h2 class="big">Sık sorulanlar</h2>
+<div class="row"><h3>Net kâr nasıl hesaplanır?</h3><p>Satıştan komisyon, hizmet bedeli, kargo, stopaj, iade ve ürün maliyeti düşülür.</p></div>
+<div class="row"><h3>Hangi pazaryerleri destekleniyor?</h3><p>Trendyol ve Hepsiburada. Sipariş, iade ve finans verileri tek panelde birleşir.</p></div>
+<div class="row"><h3>Maliyeti tanımlı olmayan ürünler ne olur?</h3><p>Kârı hesaba katılmaz ve panelde uyarı olarak görünür; eksik veri kâr gibi gösterilmez.</p></div>
+</section>
+
 <section class="sec end">
 <h2 class="big">Rakamlar hazır. Panele geç.</h2>
-<a class="cta" href="/">Panele giriş yap</a>
+<a class="cta" href="{% if session.get('lal_auth') %}/panel{% else %}/giris{% endif %}">{% if session.get('lal_auth') %}Panele git{% else %}Giriş yap{% endif %}</a>
 </section>
 <footer>LAL Commerce OS · 2026 · <a href="{{ app_version.repo }}" target="_blank" rel="noopener">{{ app_version.label }}</a></footer>
 
