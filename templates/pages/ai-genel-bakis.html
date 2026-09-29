@@ -1022,7 +1022,14 @@
 
     var el = document.getElementById('ai2-briefing-text');
     if (el) {
-      el.textContent = parts.length ? parts.join('\n\n') : 'Brifing için henüz yeterli veri yok.';
+      el.textContent = '';
+      if (!parts.length) { el.textContent = 'Brifing için henüz yeterli veri yok.'; }
+      else parts.forEach(function (t) {
+        var d = document.createElement('div');
+        d.className = 'ai2-brief-line';
+        d.textContent = t;
+        el.appendChild(d);
+      });
     }
   }
 
