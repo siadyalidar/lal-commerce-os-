@@ -451,3 +451,7 @@ html.rv-on .rv.rv-in { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
   .lal-page-content .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .lal-page-content .summary-grid > .card:last-child { grid-column: auto; }
 }
+
+.ai2-chat-panel { height: auto; max-height: none; }
+.ai2-chat-panel .ai2-chat-body { flex: 0 1 auto; max-height: 420px; }
+.ai2-chat-panel .ai2-chat-input-row { margin-top: var(--lal-space-4); }
