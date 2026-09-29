@@ -66,6 +66,8 @@ app.register_blueprint(payout_routes_bp)
 from blueprints.dashboard_routes import bp as dashboard_routes_bp  # noqa: E402
 from blueprints.growth_routes import bp as growth_routes_bp  # noqa: E402
 app.register_blueprint(dashboard_routes_bp)
+from blueprints.landing_routes import bp as landing_routes_bp
+app.register_blueprint(landing_routes_bp)
 
 from blueprints.order_routes import bp as order_routes_bp  # noqa: E402
 app.register_blueprint(order_routes_bp)
