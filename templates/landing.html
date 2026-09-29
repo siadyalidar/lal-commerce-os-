@@ -38,7 +38,7 @@ h2{font-weight:300;font-size:clamp(2.7rem,9vw,8.6rem);line-height:.98;letter-spa
 .row p{margin:0;color:var(--mute);line-height:1.55;max-width:42ch}
 .end{border-top:1px solid var(--line)}
 .cta{display:inline-block;margin-top:2rem;font-size:clamp(1.8rem,4.4vw,3.8rem);font-weight:300;letter-spacing:-.035em;text-decoration:none;border-bottom:1px solid var(--ink);padding-bottom:.25em}
-footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}
+footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}footer a{text-decoration:none;border-bottom:1px solid var(--line)}
 @media (max-width:720px){.stage{height:380vh}.row{grid-template-columns:1fr}.hud{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto}.pin::after{background:linear-gradient(to top,var(--bg) 0%,transparent 40%)}}
 @media (prefers-reduced-motion:reduce){.row{opacity:1;transform:none;transition:none}}
 </style>
@@ -85,7 +85,7 @@ footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}
 <h2 class="big">Rakamlar hazır. Panele geç.</h2>
 <a class="cta" href="/">Panele giriş yap</a>
 </section>
-<footer>LAL Commerce OS · 2026</footer>
+<footer>LAL Commerce OS · 2026 · <a href="{{ app_version.repo }}" target="_blank" rel="noopener">{{ app_version.label }}</a></footer>
 
 <script>
 (()=>{
