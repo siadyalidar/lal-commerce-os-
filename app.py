@@ -122,8 +122,13 @@ def _auth_ok(auth):
     return user_ok and pass_ok
 
 
+_PUBLIC_PATHS = {"/tanitim", "/api/version"}
+
+
 @app.before_request
 def _require_auth():
+    if request.path in _PUBLIC_PATHS:
+        return None
     if not _AUTH_ENABLED:
         return None
     auth = request.authorization
