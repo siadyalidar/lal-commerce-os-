@@ -149,7 +149,10 @@ def _require_auth():
     )
     if wants_page:
         return redirect(url_for("auth_routes.login", next=request.full_path.rstrip("?")))
-    return Response("Bu panele erişmek için giriş gerekli.", 401)
+    headers = {}
+    if not request.headers.get("Sec-Fetch-Mode"):
+        headers["WWW-Authenticate"] = 'Basic realm="Trendyol Satis Paneli"'
+    return Response("Bu panele erişmek için giriş gerekli.", 401, headers)
 
 
 if __name__ == "__main__":
