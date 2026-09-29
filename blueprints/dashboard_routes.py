@@ -29,7 +29,7 @@ from sync_core import (
 bp = Blueprint("dashboard_routes", __name__)
 
 
-@bp.route("/")
+@bp.route("/panel")
 def ai_genel_bakis_page():
     return render_template("pages/ai-genel-bakis.html", active_page="ai-genel-bakis")
 

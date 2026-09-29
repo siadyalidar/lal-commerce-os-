@@ -68,6 +68,10 @@ from blueprints.growth_routes import bp as growth_routes_bp  # noqa: E402
 app.register_blueprint(dashboard_routes_bp)
 from blueprints.landing_routes import bp as landing_routes_bp
 app.register_blueprint(landing_routes_bp)
+from blueprints.auth_routes import bp as auth_routes_bp
+app.register_blueprint(auth_routes_bp)
+app.secret_key = app.secret_key or os.getenv("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True)
 
 from blueprints.order_routes import bp as order_routes_bp  # noqa: E402
 app.register_blueprint(order_routes_bp)
@@ -122,7 +126,9 @@ def _auth_ok(auth):
     return user_ok and pass_ok
 
 
-_PUBLIC_PATHS = {"/tanitim", "/api/version"}
+from flask import redirect, session, url_for
+
+_PUBLIC_PATHS = {"/", "/tanitim", "/giris", "/cikis", "/api/version"}
 
 
 @app.before_request
@@ -131,14 +137,19 @@ def _require_auth():
         return None
     if not _AUTH_ENABLED:
         return None
-    auth = request.authorization
-    if not _auth_ok(auth):
-        return Response(
-            "Bu panele erişmek için kullanıcı adı/parola gerekli.",
-            401,
-            {"WWW-Authenticate": 'Basic realm="Trendyol Satis Paneli"'},
-        )
-    return None
+    if session.get("lal_auth"):
+        return None
+    if request.authorization and _auth_ok(request.authorization):
+        return None
+    wants_page = (
+        request.method == "GET"
+        and not request.path.startswith("/api/")
+        and not request.authorization
+        and "text/html" in request.headers.get("Accept", "")
+    )
+    if wants_page:
+        return redirect(url_for("auth_routes.login", next=request.full_path.rstrip("?")))
+    return Response("Bu panele erişmek için giriş gerekli.", 401)
 
 
 if __name__ == "__main__":
