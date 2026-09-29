@@ -50,10 +50,25 @@ html{scroll-behavior:smooth}
 .hd-links a:hover{color:var(--ink)}
 .hd a.go{border:1px solid var(--ink);padding:8px 16px;border-radius:999px}
 @media (max-width:720px){.hd-links{display:none}}
+.login{min-height:80vh;min-height:80svh;display:flex;align-items:flex-end}
+.lg-wrap{display:grid;grid-template-columns:1.2fr 1fr;gap:clamp(32px,7vw,120px);align-items:end;width:100%}
+.lg-wrap .big{margin-bottom:1.2rem}
+.lg-lead{margin:0;color:var(--mute);max-width:34ch;line-height:1.5}
+.lg-form{display:flex;flex-direction:column;gap:1.6rem;max-width:26rem;width:100%}
+.lg-form label{display:flex;flex-direction:column;gap:.5rem;font-size:14px;color:var(--mute)}
+.lg-form input{font:inherit;font-size:1.15rem;color:var(--ink);background:transparent;border:0;border-bottom:1px solid var(--line);padding:.55rem 0;border-radius:0}
+.lg-form input:focus{border-bottom-color:var(--ink)}
+.lg-btn{font:inherit;font-weight:500;font-size:1.05rem;background:var(--ink);color:var(--bg);border:0;padding:1rem 1.4rem;border-radius:4px;cursor:pointer;text-align:center;text-decoration:none;transition:opacity .2s}
+.lg-btn:hover{opacity:.88}
+.lg-alt{color:var(--mute);font-size:14px}
+.lg-err{margin:0;font-size:14px;color:#b3261e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .lg-err{color:#ff8a80}}
+:root[data-theme="dark"] .lg-err{color:#ff8a80}
+@media (max-width:820px){.lg-wrap{grid-template-columns:1fr;align-items:start}}
 </style>
 </head>
 <body>
-<header class="hd"><a class="brand" href="/"><b>LAL</b><span>Commerce OS</span></a><nav class="hd-links" aria-label="Bölümler"><a href="#stage">Nasıl çalışır</a><a href="#ozellikler">Özellikler</a><a href="#veri">Veri</a><a href="#sss">SSS</a></nav><a class="go" href="{% if session.get('lal_auth') %}/panel{% else %}/giris{% endif %}">{% if session.get('lal_auth') %}Panele git{% else %}Giriş yap{% endif %}</a></header>
+<header class="hd"><a class="brand" href="/"><b>LAL</b><span>Commerce OS</span></a><nav class="hd-links" aria-label="Bölümler"><a href="#stage">Nasıl çalışır</a><a href="#ozellikler">Özellikler</a><a href="#veri">Veri</a><a href="#sss">SSS</a></nav><a class="go" href="{% if direct %}/panel{% else %}#giris{% endif %}">{% if direct %}Panele git{% else %}Giriş yap{% endif %}</a></header>
 
 <section class="stage" id="stage" aria-label="LAL nasıl çalışır">
 <div class="pin">
@@ -104,9 +119,26 @@ html{scroll-behavior:smooth}
 <div class="row"><h3>Maliyeti tanımlı olmayan ürünler ne olur?</h3><p>Kârı hesaba katılmaz ve panelde uyarı olarak görünür; eksik veri kâr gibi gösterilmez.</p></div>
 </section>
 
-<section class="sec end">
-<h2 class="big">Rakamlar hazır. Panele geç.</h2>
-<a class="cta" href="{% if session.get('lal_auth') %}/panel{% else %}/giris{% endif %}">{% if session.get('lal_auth') %}Panele git{% else %}Giriş yap{% endif %}</a>
+<section class="sec end login" id="giris">
+<div class="lg-wrap">
+<div>
+<h2 class="big">Panele giriş.</h2>
+<p class="lg-lead">Siparişlerin, iadelerin ve net kârın giriş yaptıktan sonra seni bekliyor.</p>
+</div>
+{% if session.get('lal_auth') %}
+<div class="lg-form"><a class="lg-btn" href="/panel">Panele git</a><a class="lg-alt" href="/cikis">Çıkış yap</a></div>
+{% elif direct %}
+<div class="lg-form"><a class="lg-btn" href="/panel">Panele git</a></div>
+{% else %}
+<form class="lg-form" method="post" action="/giris">
+<input type="hidden" name="next" value="{{ next }}">
+<label>Kullanıcı adı<input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required {% if error %}autofocus{% endif %}></label>
+<label>Parola<input type="password" name="password" autocomplete="current-password" required></label>
+{% if error %}<p class="lg-err" role="alert">{{ error }}</p>{% endif %}
+<button class="lg-btn" type="submit">Giriş yap</button>
+</form>
+{% endif %}
+</div>
 </section>
 <footer>LAL Commerce OS · 2026 · <a href="{{ app_version.repo }}" target="_blank" rel="noopener">{{ app_version.label }}</a></footer>
 

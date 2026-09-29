@@ -1,7 +1,8 @@
 """
 blueprints/auth_routes.py
 --------------------------------
-Panel girisi (oturum tabanli). /giris formu PANEL_USERNAME / PANEL_PASSWORD ile
+Panel girisi (oturum tabanli). Giris formu ana sayfada (landing, #giris); /giris sadece POST hedefi ve yonlendirme.
+/giris POST PANEL_USERNAME / PANEL_PASSWORD ile
 dogrular, basarili olunca session["lal_auth"] set edilir. Basic Auth (Authorization
 header) app.py'de yedek olarak korunur; testler ve scriptler onunla calismaya devam eder.
 Brute-force korumasi: ayni IP'den 5 hatali denemeden sonra 5 dk kilit (bellekte).
@@ -12,7 +13,7 @@ import secrets
 import time
 from urllib.parse import urlparse
 
-from flask import Blueprint, redirect, render_template, request, session
+from flask import Blueprint, redirect, request, session, url_for
 
 bp = Blueprint("auth_routes", __name__)
 
@@ -34,6 +35,11 @@ def _same(a, b):
     return secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
 
+def _back_to_login(code, nxt):
+    return redirect(url_for("landing_routes.landing_page", hata=code,
+                            next=None if nxt == "/panel" else nxt, _anchor="giris"))
+
+
 @bp.route("/giris", methods=["GET", "POST"])
 def login():
     user = os.getenv("PANEL_USERNAME", "").strip()
@@ -41,24 +47,23 @@ def login():
     nxt = _safe_next(request.values.get("next"))
     if not (user and pw) or session.get("lal_auth"):
         return redirect(nxt)
-    error = None
-    if request.method == "POST":
-        ip = request.remote_addr or "?"
-        now = time.time()
-        count, last = _fails.get(ip, (0, 0.0))
-        if now - last > LOCK_SECONDS:
-            count = 0
-        if count >= MAX_FAILS:
-            error = "Çok fazla hatalı deneme. Birkaç dakika sonra tekrar dene."
-        elif _same(request.form.get("username", "").strip(), user) and _same(request.form.get("password", ""), pw):
-            _fails.pop(ip, None)
-            session.clear()
-            session["lal_auth"] = True
-            return redirect(nxt)
-        else:
-            _fails[ip] = (count + 1, now)
-            error = "Kullanıcı adı veya parola hatalı."
-    return render_template("giris.html", error=error, next=nxt), (401 if error else 200)
+    if request.method == "GET":
+        return redirect(url_for("landing_routes.landing_page",
+                                next=None if nxt == "/panel" else nxt, _anchor="giris"))
+    ip = request.remote_addr or "?"
+    now = time.time()
+    count, last = _fails.get(ip, (0, 0.0))
+    if now - last > LOCK_SECONDS:
+        count = 0
+    if count >= MAX_FAILS:
+        return _back_to_login("kilit", nxt)
+    if _same(request.form.get("username", "").strip(), user) and _same(request.form.get("password", ""), pw):
+        _fails.pop(ip, None)
+        session.clear()
+        session["lal_auth"] = True
+        return redirect(nxt)
+    _fails[ip] = (count + 1, now)
+    return _back_to_login("yanlis", nxt)
 
 
 @bp.route("/cikis")

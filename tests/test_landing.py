@@ -5,11 +5,12 @@ def _creds():
     return os.getenv("PANEL_USERNAME", ""), os.getenv("PANEL_PASSWORD", "")
 
 
-def test_root_is_public_landing(client):
+def test_root_is_public_landing_with_login_form(client):
     resp = client.get("/")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "LAL Commerce OS" in html
+    assert 'action="/giris"' in html and 'name="password"' in html
     assert "github.com/siadyalidar/lal-commerce-os-" in html
 
 
@@ -23,8 +24,10 @@ def test_version_api_is_public(client):
     assert {"label", "commit", "repo"} <= set(resp.get_json())
 
 
-def test_login_page_is_public(client):
-    assert client.get("/giris").status_code == 200
+def test_login_url_redirects_to_landing_form(client):
+    resp = client.get("/giris")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("#giris")
 
 
 def test_browser_is_redirected_to_login(client):
@@ -38,10 +41,17 @@ def test_api_and_plain_requests_stay_401(client):
     assert client.get("/api/dashboard-summary").status_code == 401
 
 
-def test_login_flow_and_logout(client):
+def test_wrong_password_returns_to_landing_with_error(client):
     user, pw = _creds()
     bad = client.post("/giris", data={"username": user, "password": "x" + pw})
-    assert bad.status_code == 401
+    assert bad.status_code == 302
+    assert "hata=yanlis" in bad.headers["Location"]
+    page = client.get(bad.headers["Location"])
+    assert "parola hatalı" in page.get_data(as_text=True)
+
+
+def test_login_flow_and_logout(client):
+    user, pw = _creds()
     ok = client.post("/giris", data={"username": user, "password": pw, "next": "/finans"})
     assert ok.status_code == 302
     assert ok.headers["Location"].endswith("/finans")
