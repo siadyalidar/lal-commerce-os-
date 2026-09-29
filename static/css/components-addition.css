@@ -2,6 +2,3 @@
 /* --- 09.08.2026: Siparişler tablosu, sipariş bazlı Net Kâr rengi --- */
 .lal-profit-pos { color: var(--lal-green); font-weight: 600; }
 .lal-profit-neg { color: var(--lal-red); font-weight: 600; }
-
-.lal-version{display:block;padding:8px 16px 14px;font-size:11px;opacity:.55;text-decoration:none;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lal-version:hover{opacity:1}

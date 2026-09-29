@@ -422,3 +422,7 @@ img.lal-brand-mark {
   border-radius: 6px;
   background: transparent;
 }
+
+a.lal-version { display: block; padding: 2px 13px 14px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; text-decoration: none; color: var(--lal-text-muted, var(--lal-text-main)); opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.lal-version:hover { opacity: 1; text-decoration: underline; }
+.lal-sidebar.is-collapsed a.lal-version { display: none; }
