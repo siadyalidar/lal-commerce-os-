@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LAL Commerce OS — Siparişten net kâra, tek akış</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e6ecea;--ink:#0d2a30;--mute:#516a6e;--line:#0d2a3024;--tr:#f27a1a;--pad:clamp(20px,4vw,56px);--f:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a1a1e;--ink:#e3eeec;--mute:#8aa3a6;--line:#e3eeec26}}
+:root[data-theme="dark"]{--bg:#0a1a1e;--ink:#e3eeec;--mute:#8aa3a6;--line:#e3eeec26}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit}a:focus-visible{outline:2px solid var(--tr);outline-offset:6px}
+.hd{position:fixed;inset:0 0 auto 0;z-index:5;display:flex;justify-content:space-between;align-items:baseline;padding:calc(18px + env(safe-area-inset-top,0px)) var(--pad) 18px;font-size:14px;font-weight:500}
+.hd b{font-weight:600;letter-spacing:.02em}.hd span{color:var(--mute);font-weight:400;margin-left:.6em}
+.hd a{text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:2px}
+.stage{position:relative;height:500vh}
+.pin{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden}
+.pin::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,var(--bg) 0%,transparent 48%)}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+.scene{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:flex-end;padding:0 var(--pad) calc(var(--pad) + env(safe-area-inset-bottom,0px) + 24px);pointer-events:none}
+.lab{font-size:15px;font-weight:500;color:var(--mute);margin:0 0 1.2rem}
+h2,h3{margin:0}
+h2{font-weight:300;font-size:clamp(2.7rem,9vw,8.6rem);line-height:.98;letter-spacing:-.045em}
+.ln{display:block;overflow:hidden;padding-bottom:.12em;margin-bottom:-.12em}
+.ln>span{display:block;will-change:transform}
+.sub{max-width:34ch;margin:1.6rem 0 0;font-size:clamp(1rem,1.3vw,1.2rem);line-height:1.5;color:var(--mute)}
+.hud{position:absolute;z-index:3;right:var(--pad);bottom:calc(var(--pad) + env(safe-area-inset-bottom,0px) + 24px);font-size:14px;font-weight:500;text-align:right;color:var(--mute)}
+.hud i{display:block;height:1px;margin-top:10px;background:var(--ink);transform-origin:left;transform:scaleX(0);opacity:.5}
+.sec{padding:clamp(88px,14vw,200px) var(--pad)}
+.big{font-weight:300;font-size:clamp(2rem,5.6vw,5.2rem);line-height:1.04;letter-spacing:-.04em;max-width:16ch;margin-bottom:clamp(48px,8vw,110px)}
+.row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:1rem 3rem;padding:1.9rem 0;border-top:1px solid var(--line);align-items:baseline;opacity:0;transform:translateY(18px);transition:opacity .9s ease,transform .9s cubic-bezier(.2,.7,.1,1)}
+.row.in{opacity:1;transform:none}
+.row h3{font-weight:400;font-size:clamp(1.6rem,3.2vw,2.8rem);letter-spacing:-.03em}
+.row p{margin:0;color:var(--mute);line-height:1.55;max-width:42ch}
+.end{border-top:1px solid var(--line)}
+.cta{display:inline-block;margin-top:2rem;font-size:clamp(1.8rem,4.4vw,3.8rem);font-weight:300;letter-spacing:-.035em;text-decoration:none;border-bottom:1px solid var(--ink);padding-bottom:.25em}
+footer{padding:0 var(--pad) 40px;color:var(--mute);font-size:14px}
+@media (max-width:720px){.stage{height:380vh}.row{grid-template-columns:1fr}.hud{top:calc(64px + env(safe-area-inset-top,0px));bottom:auto}.pin::after{background:linear-gradient(to top,var(--bg) 0%,transparent 40%)}}
+@media (prefers-reduced-motion:reduce){.row{opacity:1;transform:none;transition:none}}
+</style>
+</head>
+<body>
+<header class="hd"><div><b>LAL</b><span>Commerce OS</span></div><a href="/">Panele giriş</a></header>
+
+<section class="stage" id="stage" aria-label="LAL nasıl çalışır">
+<div class="pin">
+<canvas id="cv" aria-hidden="true"></canvas>
+<div class="scene">
+<p class="lab"><span class="ln"><span>Trendyol, Hepsiburada, iade, kargo</span></span></p>
+<h2><span class="ln"><span>Satış her yere</span></span><span class="ln"><span>dağılmış durumda.</span></span></h2>
+<p class="sub"><span class="ln"><span>Her biri ayrı ekranda, her biri ayrı bir hesap.</span></span></p>
+</div>
+<div class="scene">
+<p class="lab"><span class="ln"><span>Siparişler ve iadeler</span></span></p>
+<h2><span class="ln"><span>İki pazaryeri,</span></span><span class="ln"><span>tek akış.</span></span></h2>
+<p class="sub"><span class="ln"><span>Tüm hareketler aynı düzende, aynı listede toplanır.</span></span></p>
+</div>
+<div class="scene">
+<p class="lab"><span class="ln"><span>Komisyon, kargo, iade, maliyet</span></span></p>
+<h2><span class="ln"><span>Gürültü gider,</span></span><span class="ln"><span>net kâr kalır.</span></span></h2>
+<p class="sub"><span class="ln"><span>Her kalem düşülür, geriye gerçek rakam çıkar.</span></span></p>
+</div>
+<div class="scene">
+<p class="lab"><span class="ln"><span>LAL Commerce OS</span></span></p>
+<h2><span class="ln"><span>Her kuruş</span></span><span class="ln"><span>yerini bilir.</span></span></h2>
+<p class="sub"><span class="ln"><span>Satışın gerçek görünümü, tek panelde.</span></span></p>
+</div>
+<div class="hud" id="hud" aria-hidden="true"><span id="cnt">Kaydır</span><i id="bar"></i></div>
+</div>
+</section>
+
+<section class="sec">
+<h2 class="big">Siparişten borca, hepsi aynı defterde.</h2>
+<div class="row"><h3>Siparişler ve iadeler</h3><p>Trendyol ve Hepsiburada siparişleri, iadeler ve durumlar tek listede görünür.</p></div>
+<div class="row"><h3>Finans</h3><p>Komisyon, kargo ve giderler düşülür; ekranda gerçek net kâr yer alır.</p></div>
+<div class="row"><h3>Ürünler</h3><p>Ürün görseli, maliyet ve marj bilgisi her ürünün kartında bir arada durur.</p></div>
+<div class="row"><h3>Toptancı borcu</h3><p>Satışla biriken borç, yapılan ödemelerle azalan bakiye olarak takip edilir.</p></div>
+</section>
+
+<section class="sec end">
+<h2 class="big">Rakamlar hazır. Panele geç.</h2>
+<a class="cta" href="/">Panele giriş yap</a>
+</section>
+<footer>LAL Commerce OS · 2026</footer>
+
+<script>
+(()=>{
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const cv=$('#cv'),ctx=cv.getContext('2d'),stage=$('#stage');
+const mob=matchMedia('(max-width:720px)').matches,reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const N=mob?380:900,R=mob?7:10,n=Math.ceil(N/R);
+const cl=x=>Math.min(1,Math.max(0,x)),ss=x=>{x=cl(x);return x*x*(3-2*x)};
+const P=[];
+for(let i=0;i<N;i++)P.push({g:Math.random()<.5?0:1,u:Math.random(),a:Math.random(),b:Math.random(),ph:Math.random()*6.28,row:i%R,idx:(i/R)|0});
+const G=[P.filter(p=>!p.g),P.filter(p=>p.g)];
+let W,H,dpr,col=['#f27a1a','#0d2a30'];
+function readCol(){const s=getComputedStyle(document.documentElement);col=['#f27a1a',s.getPropertyValue('--ink').trim()||'#0d2a30']}
+function layout(){
+dpr=Math.min(devicePixelRatio||1,mob?1.5:2);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+const mx=mob?.08:.14,sp=1-2*mx;
+P.forEach(p=>{
+p.ax=p.a*W;p.ay=p.b*H;
+const s=1-p.u;p.bx=W*(.04+.92*p.u);p.by=H*.42+(p.g?1:-1)*H*.2*Math.pow(s,1.6)+(p.b-.5)*H*(.02+.05*s);
+p.cx=W*mx+W*sp*(p.idx/(n-1));p.cy=H*(.2+.44*p.row/(R-1));
+});
+readCol();
+}
+function draw(p,t){
+ctx.clearRect(0,0,W,H);
+const s1=ss((p-.16)/.16),s2=ss((p-.46)/.16),calm=ss((p-.72)/.2);
+const amp=((1-s2)*(mob?9:16)*(1-.5*s1))+(1-calm)*1.5,r=(mob?1.2:1.5)*(1+calm*.7),al=.3+.6*s2;
+ctx.globalAlpha=al;
+for(let g=0;g<2;g++){
+ctx.fillStyle=col[g];ctx.beginPath();
+for(const q of G[g]){
+let x=q.ax+(q.bx-q.ax)*s1,y=q.ay+(q.by-q.ay)*s1;
+x+=(q.cx-x)*s2;y+=(q.cy-y)*s2;
+const w=t*.0004*(.6+q.a);x+=Math.sin(w+q.ph)*amp;y+=Math.cos(w*1.1+q.ph)*amp;
+ctx.moveTo(x+r,y);ctx.arc(x,y,r,0,6.283);
+}
+ctx.fill();
+}
+ctx.globalAlpha=1;
+}
+const sc=$$('.scene').map(el=>[...el.querySelectorAll('.ln>span')]);
+const cnt=$('#cnt'),bar=$('#bar');
+function ui(p){
+sc.forEach((ls,i)=>{
+const a=i*.25,b=a+.25;
+ls.forEach((el,k)=>{
+const inn=(i?a-.015:-.3)+k*.016,out=b-.1+k*.012;
+let y=(1-ss((p-inn)/.06))*112;
+if(i<3)y-=ss((p-out)/.06)*112;
+el.style.transform='translate3d(0,'+y+'%,0)';
+});
+});
+cnt.textContent=p<.03?'Kaydır':(Math.min(3,Math.floor(p*4))+1)+' / 4';
+bar.style.transform='scaleX('+p+')';
+}
+let cur=0,tgt=0,raf=0;
+function frame(t){
+const r=stage.getBoundingClientRect(),h=stage.offsetHeight-innerHeight;
+tgt=cl(-r.top/h);
+cur+=(tgt-cur)*(reduce?1:(mob?.14:.09));
+if(Math.abs(tgt-cur)<1e-5)cur=tgt;
+draw(cur,t);ui(cur);
+raf=requestAnimationFrame(frame);
+}
+new IntersectionObserver(e=>{
+if(e[0].isIntersecting){if(!raf)raf=requestAnimationFrame(frame)}else{cancelAnimationFrame(raf);raf=0}
+},{rootMargin:'100px'}).observe(stage);
+addEventListener('resize',layout);
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',readCol);
+layout();
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.2});
+$$('.row').forEach((el,i)=>{el.style.transitionDelay=(i%4)*70+'ms';io.observe(el)});
+})();
+</script>
+</body>
+</html>
