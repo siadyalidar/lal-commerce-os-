@@ -63,7 +63,8 @@ def test_hb_compute_order_totals_preserves_hb_vs_merchant_discount_split():
     # Toplam discount_amount, ikisinin toplamıyla AYNI kalmalı (geriye dönük uyumluluk)
     assert totals["discount_amount"] == 18.0
     assert totals["gross_amount"] == 250.0  # 100*2 + 50*1
-    assert totals["net_amount"] == 232.0    # 250 - 18
+    # HB'de gross zaten indirimli tutar; indirimler bilgi amaçlı, net = gross (30.09.2026)
+    assert totals["net_amount"] == 250.0
 
 
 def test_hb_compute_order_totals_uses_package_total_price_when_present():
@@ -80,7 +81,7 @@ def test_hb_compute_order_totals_uses_package_total_price_when_present():
     assert totals["hb_discount_amount"] == 10.0
     assert totals["merchant_discount_amount"] == 5.0
     assert totals["discount_amount"] == 15.0
-    assert totals["net_amount"] == 85.0
+    assert totals["net_amount"] == 100.0  # totalPrice zaten indirimli; tekrar düşülmez
 
 
 def test_hb_compute_order_totals_handles_missing_discount_fields_as_zero():
@@ -95,3 +96,38 @@ def test_hb_compute_order_totals_handles_missing_discount_fields_as_zero():
     assert totals["merchant_discount_amount"] == 0.0
     assert totals["discount_amount"] == 0.0
     assert totals["net_amount"] == 200.0
+
+
+def test_hb_net_amount_equals_gross_when_totalprice_already_discounted():
+    """Gerçek vaka (30.09.2026): SFHY-3-GRS sipariş 4215081170 -- totalPrice
+    1907.10, totalMerchantDiscount 1120.108. Hakediş geliri 1907.10; net,
+    indirim ikinci kez düşülerek 786.99 çıkmamalı."""
+    import sync_core
+    source_lines = [{"price": 1907.10, "quantity": 1,
+                     "totalHBDiscount": 0.0, "totalMerchantDiscount": 1120.108}]
+    totals = sync_core._hb_compute_order_totals(source_lines, package_total_price=1907.10)
+    assert totals["gross_amount"] == 1907.10
+    assert totals["merchant_discount_amount"] == 1120.108
+    assert totals["net_amount"] == 1907.10
+
+
+def test_hb_unpackaged_orders_net_equals_gross(monkeypatch):
+    """Paketlenmemiş (/orders) yolu da aynı: net = gross."""
+    from datetime import datetime
+    import sync_core
+    payload = {"totalCount": 1, "items": [{
+        "orderNumber": "4215081170", "status": "Open",
+        "orderDate": "2026-09-29T23:02:40",
+        "customerName": "Test", "cargoCompany": "hepsiJET",
+        "merchantSKU": "SFHY-3-GRS", "productBarcode": "TESTBARCODE",
+        "name": "Test", "quantity": 1,
+        "totalPrice": {"currency": "TRY", "amount": 1907.10},
+        "unitPrice": {"currency": "TRY", "amount": 1907.10},
+        "hbDiscount": {"totalPrice": {"currency": "TRY", "amount": 0.0}},
+        "merchantDiscount": {"totalPrice": {"currency": "TRY", "amount": 1120.108}},
+    }]}
+    monkeypatch.setattr(sync_core, "hepsiburada_get", lambda path, params=None: payload)
+    order_rows, _ = sync_core.fetch_unpackaged_hb_orders(datetime(2026, 9, 1), datetime(2026, 10, 1))
+    assert len(order_rows) == 1
+    assert order_rows[0]["gross_amount"] == 1907.10
+    assert order_rows[0]["net_amount"] == 1907.10

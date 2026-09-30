@@ -344,7 +344,8 @@ def fetch_unpackaged_hb_orders(start_dt, end_dt):
         hb_discount = sum((_hb_money((ln.get("hbDiscount") or {}).get("totalPrice")) or 0) for ln in lines)
         merchant_discount = sum((_hb_money((ln.get("merchantDiscount") or {}).get("totalPrice")) or 0) for ln in lines)
         discount = hb_discount + merchant_discount
-        net = gross - discount
+        # /orders yolunda da totalPrice indirimli tutar (bkz. _hb_compute_order_totals)
+        net = gross
         first = lines[0]
 
         order_rows.append({
@@ -635,7 +636,9 @@ def _hb_compute_order_totals(source_lines, package_total_price=None):
     hb_discount = sum(_hb_money(ln.get("totalHBDiscount")) or 0 for ln in source_lines)
     merchant_discount = sum(_hb_money(ln.get("totalMerchantDiscount")) or 0 for ln in source_lines)
     discount = hb_discount + merchant_discount
-    net = gross - discount
+    # HB'de totalPrice ZATEN indirimli (müşterinin ödediği) tutar; indirim
+    # alanları bilgi amaçlı. Hakediş geliri gross ile birebir aynı (30.09.2026).
+    net = gross
 
     return {
         "gross_amount": gross,
