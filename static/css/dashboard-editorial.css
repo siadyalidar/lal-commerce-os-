@@ -43,3 +43,27 @@ html .summary-grid .card .value { font-size: 24px; letter-spacing: -.02em; font-
   html .hero-stat, html .summary-grid .card { transition: none; }
   html .hero-stat:hover { transform: none; }
 }
+
+html .hero-stat {
+  display: block; position: relative; min-width: 0; overflow: hidden;
+  padding: 24px 22px 22px; container-type: inline-size;
+}
+html .hero-stat-icon {
+  position: absolute; top: 16px; right: 16px; width: 18px; height: 18px; padding: 0;
+  display: flex; background: transparent; border: 0; opacity: .45;
+}
+html .hero-stat-icon svg { width: 18px; height: 18px; }
+html .hero-stat-label {
+  margin-bottom: 12px; padding-right: 28px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+html .hero-stat-value,
+html #net-profit-hero .hero-stat-value {
+  font-family: var(--lal-font-display);
+  font-weight: 500;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: "lnum" 1, "tnum" 1;
+  letter-spacing: -.035em; line-height: 1.05; white-space: nowrap;
+  font-size: clamp(22px, calc(100cqw / 5.8), 44px);
+}
+html #net-profit-hero .hero-stat-value { font-size: clamp(26px, calc(100cqw / 5.6), 52px); }
