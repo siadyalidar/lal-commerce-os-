@@ -4,6 +4,7 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/monthly-profit-chart.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-editorial.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -122,5 +123,6 @@
 
 {% block page_scripts %}
 <script src="{{ url_for('static', filename='js/reveal.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/countup.js') }}"></script>
 <script src="{{ url_for('static', filename='js/gosterge-paneli.js') }}"></script>
 {% endblock %}
