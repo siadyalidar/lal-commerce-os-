@@ -190,6 +190,64 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  function lalRgb(color) {
+    const c = String(color).trim();
+    if (c[0] === '#') {
+      const h = c.length === 4 ? c.slice(1).split('').map((x) => x + x).join('') : c.slice(1, 7);
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    }
+    const n = c.match(/[\d.]+/g) || [0, 0, 0];
+    return [+n[0], +n[1], +n[2]];
+  }
+
+  function lalAlpha(color, alpha) {
+    const [r, g, b] = lalRgb(color);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  function lalIsLightTheme() {
+    const [r, g, b] = lalRgb(lalToken('--lal-surface'));
+    return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+  }
+
+  function monthlyProfitGlassFill(context, color) {
+    const light = lalIsLightTheme();
+    const bar = context.element;
+    if (!bar || !context.chart.chartArea) return lalAlpha(color, 0.3);
+    const p = bar.getProps(['y', 'base'], true);
+    if (!isFinite(p.y) || !isFinite(p.base) || p.y === p.base) return lalAlpha(color, 0.3);
+    const g = context.chart.ctx.createLinearGradient(0, p.y, 0, p.base);
+    g.addColorStop(0, lalAlpha(color, light ? 0.62 : 0.68));
+    g.addColorStop(1, lalAlpha(color, light ? 0.12 : 0.1));
+    return g;
+  }
+
+  const monthlyProfitGlassHighlight = {
+    id: 'mpcGlassHighlight',
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      const light = lalIsLightTheme();
+      ctx.save();
+      ctx.strokeStyle = light ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'round';
+      chart.data.datasets.forEach((ds, di) => {
+        if (!chart.isDatasetVisible(di)) return;
+        chart.getDatasetMeta(di).data.forEach((bar, i) => {
+          if (!ds.data[i] || ds.data[i] < 0) return;
+          const p = bar.getProps(['x', 'y', 'base', 'width'], true);
+          if (p.base - p.y < 8) return;
+          const inset = Math.min(5, p.width / 3);
+          ctx.beginPath();
+          ctx.moveTo(p.x - p.width / 2 + inset, p.y + 1.5);
+          ctx.lineTo(p.x + p.width / 2 - inset, p.y + 1.5);
+          ctx.stroke();
+        });
+      });
+      ctx.restore();
+    },
+  };
+
   // Görsel hiyerarşi (sadeleştirilmiş): Ciro en ince/en nötr arka plan
   // referansı — Brüt Kâr ikincil — Net Kâr (= "gerçek net kâr", panelin tek
   // "net kâr" tanımı) tek ve en güçlü vurgu, altı dolgulu.
@@ -668,10 +726,12 @@
       type: 'bar',
       label: m.label,
       data: dataByKey[m.key],
-      backgroundColor: m.color(),
-      borderRadius: 3,
+      backgroundColor: (context) => monthlyProfitGlassFill(context, m.color()),
+      borderColor: () => lalAlpha(m.color(), lalIsLightTheme() ? 0.55 : 0.5),
+      borderWidth: 1,
+      borderRadius: 6,
       borderSkipped: false,
-      maxBarThickness: 20,
+      maxBarThickness: 14,
     }));
 
     monthlyProfitBarChart = new Chart(ctx, {
@@ -705,7 +765,7 @@
           },
         },
       },
-      plugins: [monthlyProfitBarValueLabels],
+      plugins: [monthlyProfitBarValueLabels, monthlyProfitGlassHighlight],
     });
     monthlyProfitBarChart.currentMonthIndex = monthlyProfitCurrentMonthIndex(months);
 
@@ -733,7 +793,6 @@
       monthlyProfitChart.update();
     }
     if (monthlyProfitBarChart) {
-      freshMetrics.forEach((m, i) => { monthlyProfitBarChart.data.datasets[i].backgroundColor = m.color(); });
       monthlyProfitBarChart.options.scales.x.border.color = lalToken('--lal-border-soft');
       monthlyProfitBarChart.options.scales.x.ticks.color = lalToken('--lal-text-faint');
       monthlyProfitBarChart.options.scales.y.grid.color = lalToken('--lal-border-soft');

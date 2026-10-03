@@ -177,3 +177,16 @@
 .mpc-chart-wrap > canvas.is-hidden {
   display: none !important;
 }
+
+.mpc-chart-wrap {
+  background-image:
+    radial-gradient(circle at 12% 92%, var(--lal-amber-dim), transparent 55%),
+    radial-gradient(circle at 88% 8%, var(--lal-green-dim), transparent 55%);
+}
+
+.mpc-tooltip {
+  background: color-mix(in srgb, var(--lal-surface-2) 74%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--lal-border-soft) 70%, transparent);
+}
