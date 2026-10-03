@@ -1,0 +1,101 @@
+html .lal-topbar-controls { display: flex; align-items: center; gap: 8px; }
+
+html .lal-theme-toggle {
+  height: 36px; padding: 0 14px; border: 1px solid var(--lal-border); border-radius: 0;
+  background: transparent; color: var(--lal-text-faint); cursor: pointer;
+  font: 600 10px/1 var(--lal-font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: .14em; text-transform: uppercase;
+  transition: color .2s ease, border-color .2s ease;
+}
+html .lal-theme-toggle:hover { color: var(--lal-text-main); border-color: var(--lal-text-faint); }
+
+html .mp-switch {
+  position: relative; display: inline-flex; align-items: stretch; gap: 0;
+  height: 36px; padding: 2px; border: 1px solid var(--lal-border); border-radius: 0; background: transparent;
+}
+html .mp-switch .mp-switch-btn {
+  position: relative; z-index: 1; padding: 0 14px; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none; cursor: pointer;
+  font: 600 11px/1 var(--lal-font-body); letter-spacing: .04em; color: var(--lal-text-faint);
+  transition: color .2s ease;
+}
+html .mp-switch .mp-switch-btn:hover { color: var(--lal-text-main); }
+html .mp-switch .mp-switch-btn.active,
+html[data-lal-theme] .mp-switch .mp-switch-btn.active {
+  color: var(--lal-text-main); background: transparent; border: 0; box-shadow: none;
+}
+.mp-thumb {
+  position: absolute; z-index: 0; top: 2px; bottom: 2px; left: 0; width: 0;
+  pointer-events: none; opacity: 0;
+  background: color-mix(in srgb, var(--lal-text-main) 9%, transparent);
+  box-shadow: inset 0 -2px 0 var(--lal-accent);
+  transition: transform .4s cubic-bezier(.22,1,.36,1), width .4s cubic-bezier(.22,1,.36,1), opacity .25s ease;
+}
+.mp-thumb.is-ready { opacity: 1; }
+
+.lal-dd { position: relative; }
+html .lal-dd-btn {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 12px;
+  height: 36px; min-width: 132px; padding: 0 12px 0 14px;
+  border: 1px solid var(--lal-border); border-radius: 0; background: transparent;
+  color: var(--lal-text-main); cursor: pointer;
+  font: 500 13px/1 var(--lal-font-body); transition: border-color .2s ease;
+}
+html .lal-dd-btn:hover, html .lal-dd.is-open .lal-dd-btn { border-color: var(--lal-text-faint); }
+html .lal-dd-btn:focus-visible { outline: 1px solid var(--lal-accent); outline-offset: 2px; }
+.lal-dd-btn svg {
+  width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; opacity: .6;
+  transition: transform .3s cubic-bezier(.22,1,.36,1);
+}
+.lal-dd.is-open .lal-dd-btn svg { transform: rotate(180deg); }
+.lal-dd-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 100%;
+  margin: 0; padding: 4px; list-style: none;
+  background: color-mix(in srgb, var(--lal-surface-2) 84%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--lal-border); box-shadow: 0 18px 40px rgba(0,0,0,.26);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform: translateY(-4px) scale(.98); transform-origin: top right;
+  transition: opacity .18s ease, transform .25s cubic-bezier(.22,1,.36,1), visibility 0s linear .25s;
+}
+.lal-dd.is-open .lal-dd-menu {
+  opacity: 1; visibility: visible; pointer-events: auto; transform: none; transition-delay: 0s;
+}
+.lal-dd-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 9px 12px; white-space: nowrap; cursor: pointer; font-size: 13px;
+  color: color-mix(in srgb, var(--lal-text-main) 64%, var(--lal-text-faint));
+}
+.lal-dd-opt:hover, .lal-dd-opt.is-focus {
+  background: color-mix(in srgb, var(--lal-text-main) 7%, transparent); color: var(--lal-text-main);
+}
+.lal-dd-opt[aria-selected="true"] { color: var(--lal-text-main); }
+.lal-dd-opt[aria-selected="true"]::after { content: ''; width: 5px; height: 5px; background: var(--lal-accent); }
+html .lal-select-native {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  opacity: 0; pointer-events: none; clip: rect(0 0 0 0);
+}
+
+html .lal-topbar .lal-btn-primary,
+html[data-lal-theme] .lal-topbar .lal-btn-primary {
+  height: 36px; min-height: 36px; padding: 0 18px; border: 1px solid var(--lal-text-main); border-radius: 0;
+  background: var(--lal-text-main); color: var(--lal-surface);
+  font: 650 11px/1 var(--lal-font-body); letter-spacing: .08em; text-transform: uppercase;
+  transition: opacity .2s ease, transform .2s ease;
+}
+html .lal-topbar .lal-btn-primary:hover:not(:disabled),
+html[data-lal-theme] .lal-topbar .lal-btn-primary:hover:not(:disabled) {
+  background: var(--lal-text-main); opacity: .88; border-color: var(--lal-text-main);
+}
+
+html #alerts-band { font-size: 13px; letter-spacing: .005em; }
+html #alerts-band a, html #alerts-band button {
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--lal-text-main) 30%, transparent);
+  transition: text-decoration-color .2s ease;
+}
+html #alerts-band a:hover, html #alerts-band button:hover { text-decoration-color: var(--lal-text-main); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-thumb, .lal-dd-menu, .lal-dd-btn svg, html .lal-topbar .lal-btn-primary { transition: none !important; }
+}

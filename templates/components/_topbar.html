@@ -1,3 +1,4 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='css/topbar-editorial.css') }}">
 <header class="lal-topbar">
   <div>
     <div class="lal-topbar-title">{% block page_title %}LAL Commerce OS{% endblock %}</div>
@@ -35,3 +36,4 @@
 
 <!-- Uyarılar artık her sayfada görünür tek birleşik bant (Faz 3 IA kararı) -->
 <div id="alerts-band"></div>
+<script src="{{ url_for('static', filename='js/topbar.js') }}" defer></script>
