@@ -170,3 +170,15 @@
     animation: none !important;
   }
 }
+
+:root {
+  --lal-scroll-thumb: #3a3e41;
+  --lal-scroll-thumb-hover: #5d6265;
+  --lal-border-strong: #454a4e;
+  --lal-border-hover: #565b5f;
+  --lal-border-btn: #5a5f63;
+  --lal-input-bg: #101214;
+  --lal-skeleton-hi: #303438;
+  --lal-hero-from: #191719;
+  --lal-result-bg: #24181b;
+}
