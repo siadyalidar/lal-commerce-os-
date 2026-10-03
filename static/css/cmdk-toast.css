@@ -1,0 +1,84 @@
+.lal-cmdk-overlay {
+  position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: flex-start;
+  padding-top: 14vh; background: color-mix(in srgb, black 42%, transparent);
+  opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s;
+}
+.lal-cmdk-overlay.is-open { opacity: 1; visibility: visible; transition-delay: 0s; }
+.lal-cmdk {
+  width: min(580px, calc(100vw - 32px)); max-height: 62vh; display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--lal-surface-2) 86%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid var(--lal-border); box-shadow: 0 30px 80px rgba(0,0,0,.4);
+  transform: translateY(-8px) scale(.985); transition: transform .3s cubic-bezier(.22,1,.36,1);
+}
+.lal-cmdk-overlay.is-open .lal-cmdk { transform: none; }
+.lal-cmdk-input {
+  width: 100%; height: 56px; padding: 0 20px; box-sizing: border-box; border: 0; border-radius: 0;
+  border-bottom: 1px solid var(--lal-border); background: transparent; color: var(--lal-text-main);
+  font: 400 16px/1 var(--lal-font-body); outline: none;
+}
+.lal-cmdk-input::placeholder { color: var(--lal-text-faint); }
+.lal-cmdk-list { margin: 0; padding: 6px; list-style: none; overflow-y: auto; }
+.lal-cmdk-group {
+  padding: 12px 14px 6px; font: 600 9px/1 var(--lal-font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: .2em; text-transform: uppercase; color: var(--lal-text-faint);
+}
+.lal-cmdk-item {
+  display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; font-size: 14px;
+  color: color-mix(in srgb, var(--lal-text-main) 70%, var(--lal-text-faint));
+}
+.lal-cmdk-item.is-active {
+  color: var(--lal-text-main); background: color-mix(in srgb, var(--lal-text-main) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--lal-accent);
+}
+.lal-cmdk-item small { font: 500 10px/1 var(--lal-font-mono, 'JetBrains Mono', monospace); letter-spacing: .12em; color: var(--lal-text-faint); }
+.lal-cmdk-empty {
+  padding: 28px 14px; text-align: center; color: var(--lal-text-faint);
+  font: 500 11px/1 var(--lal-font-mono, 'JetBrains Mono', monospace); letter-spacing: .14em; text-transform: uppercase;
+}
+.lal-cmdk-foot {
+  display: flex; gap: 18px; padding: 10px 16px; border-top: 1px solid var(--lal-border);
+  font: 500 10px/1 var(--lal-font-mono, 'JetBrains Mono', monospace); letter-spacing: .1em; color: var(--lal-text-faint);
+}
+
+html .lal-cmdk-btn {
+  display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px 0 14px;
+  border: 1px solid var(--lal-border); border-radius: 0; background: transparent; color: var(--lal-text-faint); cursor: pointer;
+  font: 500 13px/1 var(--lal-font-body); transition: color .2s ease, border-color .2s ease;
+}
+html .lal-cmdk-btn:hover { color: var(--lal-text-main); border-color: var(--lal-text-faint); }
+.lal-cmdk-btn kbd {
+  padding: 3px 6px; border: 1px solid var(--lal-border);
+  font: 600 10px/1 var(--lal-font-mono, 'JetBrains Mono', monospace); letter-spacing: .06em; color: var(--lal-text-faint);
+}
+
+.lal-toasts {
+  position: fixed; right: 24px; bottom: 24px; z-index: 1100; display: flex; flex-direction: column; gap: 10px;
+  width: min(380px, calc(100vw - 32px)); pointer-events: none;
+}
+.lal-toast {
+  position: relative; pointer-events: auto; cursor: pointer; padding: 14px 40px 14px 18px; font-size: 13px; line-height: 1.5;
+  color: var(--lal-text-main); background: color-mix(in srgb, var(--lal-surface-2) 88%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--lal-border); box-shadow: 0 18px 40px rgba(0,0,0,.28);
+  animation: lal-toast-in .45s cubic-bezier(.22,1,.36,1) both;
+}
+.lal-toast::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--lal-text-faint); }
+.lal-toast.is-success::before { background: var(--lal-green); }
+.lal-toast.is-error::before { background: var(--lal-red); }
+.lal-toast::after { content: '\00d7'; position: absolute; top: 10px; right: 14px; font-size: 16px; line-height: 1; color: var(--lal-text-faint); }
+.lal-toast.is-out { animation: lal-toast-out .3s ease both; }
+@keyframes lal-toast-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes lal-toast-out { to { opacity: 0; transform: translateX(16px); } }
+
+@view-transition { navigation: auto; }
+html .lal-sidebar { view-transition-name: lal-sidebar; }
+html .lal-topbar { view-transition-name: lal-topbar; }
+::view-transition-group(lal-sidebar), ::view-transition-group(lal-topbar) { animation-duration: 0s; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; animation-timing-function: ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  .lal-cmdk-overlay, .lal-cmdk { transition: none !important; }
+  .lal-toast, .lal-toast.is-out { animation: none !important; }
+}
