@@ -17,8 +17,10 @@
       thumb.classList.add('is-ready');
       if (instant) { void thumb.offsetWidth; thumb.style.transition = ''; }
     };
-    new MutationObserver(function () { moveThumb(false); })
-      .observe(sw, { attributes: true, attributeFilter: ['class'], subtree: true });
+    var mpObs = new MutationObserver(function () { moveThumb(false); });
+    sw.querySelectorAll('.mp-switch-btn').forEach(function (b) {
+      mpObs.observe(b, { attributes: true, attributeFilter: ['class'] });
+    });
     window.addEventListener('resize', function () { moveThumb(true); });
     window.addEventListener('load', function () { moveThumb(true); });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { moveThumb(true); });
