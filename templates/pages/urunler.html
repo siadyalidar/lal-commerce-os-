@@ -2,6 +2,10 @@
 {% block title %}Ürünler — LAL{% endblock %}
 {% block page_title %}Ürünler{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/product-cards.css') }}">
+{% endblock %}
+
 {% block content %}
   <section class="lal-page-intro">
     <p>Ürün performansı</p>
@@ -91,5 +95,6 @@
 {% endblock %}
 
 {% block page_scripts %}
+<script src="{{ url_for('static', filename='js/product-cards.js') }}"></script>
 <script src="{{ url_for('static', filename='js/urunler.js') }}"></script>
 {% endblock %}

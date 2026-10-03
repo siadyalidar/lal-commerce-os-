@@ -56,6 +56,7 @@
 
     if (!items.length) {
       document.getElementById('margins-tbody').innerHTML = emptyStateRow(7, 'Bu filtreye uyan ürün yok.');
+      if (window.lalProductCards) window.lalProductCards.render([]);
       return;
     }
 
@@ -78,6 +79,8 @@
         }</td>
       </tr>
     `).join('');
+
+    if (window.lalProductCards) window.lalProductCards.render(items);
 
     document.querySelectorAll('.inline-cost-save').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -124,6 +127,7 @@
     // Faz 8.1: skeleton — tablo görünür kalıyor, içine gerçek satırların
     // şekline yakın placeholder'lar konuyor (metin "Yükleniyor…" yerine).
     document.getElementById('margins-tbody').innerHTML = skeletonTableRows(7, 6, [14, 30, 8, 12, 12, 10, 20]);
+    if (window.lalProductCards) window.lalProductCards.loading();
     safeDisplay('margins-loading', 'none');
     safeDisplay('margins-table-wrap', 'block');
     try {
@@ -133,6 +137,7 @@
       if (data.error) {
         showError(data.error);
         document.getElementById('margins-tbody').innerHTML = errorStateRow(7, data.error);
+        if (window.lalProductCards) window.lalProductCards.error(data.error);
         return;
       }
       marginItemsCache = data.items || [];
@@ -140,6 +145,7 @@
     } catch (e) {
       showError('Ürün performansı alınamadı: ' + e.message);
       document.getElementById('margins-tbody').innerHTML = errorStateRow(7, e.message);
+      if (window.lalProductCards) window.lalProductCards.error(e.message);
     }
   }
 
