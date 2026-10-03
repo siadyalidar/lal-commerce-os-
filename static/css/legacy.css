@@ -27,9 +27,9 @@
   h1, h2 { font-family: var(--font-display); letter-spacing: -0.01em; }
 
   header {
-    background: linear-gradient(180deg, #0D0F13 0%, #0A0B0D 100%);
+    background: linear-gradient(180deg, var(--lal-bg-elevated) 0%, var(--lal-bg) 100%);
     border-bottom: 1px solid var(--border-soft);
-    color: white;
+    color: var(--lal-text-main);
     padding: 16px 28px;
   }
   .header-top {
@@ -82,7 +82,7 @@
   }
   .greeting-hero .hello strong {
     font-weight: 700;
-    background: linear-gradient(135deg, var(--accent) 0%, #FFFFFF 55%, var(--accent) 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, var(--lal-text-main) 55%, var(--accent) 100%);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     filter: drop-shadow(0 0 22px rgba(61, 219, 217, 0.28));
   }
@@ -107,7 +107,7 @@
     font-family: var(--font-display); font-weight: 700; letter-spacing: -0.03em;
     font-size: clamp(40px, 6vw, 68px); line-height: 1; color: var(--text-main);
     font-variant-numeric: tabular-nums;
-    background: linear-gradient(180deg, #FFFFFF 0%, #C9CDD3 100%);
+    background: linear-gradient(180deg, var(--lal-text-main) 0%, var(--lal-text-muted) 100%);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
   .hero-figure-secondary { padding-bottom: 6px; }
