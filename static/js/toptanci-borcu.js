@@ -81,6 +81,20 @@
           payBtn.addEventListener('click', function () { addPayment(s.id, s.ad); });
           tdActions.appendChild(payBtn);
 
+          var adjBtn = document.createElement('button');
+          adjBtn.className = 'lal-btn';
+          adjBtn.textContent = 'Borç Ekle';
+          adjBtn.style.marginLeft = '8px';
+          adjBtn.addEventListener('click', function () { addAdjustment(s.id, s.ad); });
+          tdActions.appendChild(adjBtn);
+
+          var resetBtn = document.createElement('button');
+          resetBtn.className = 'lal-btn';
+          resetBtn.textContent = 'Sıfırla';
+          resetBtn.style.marginLeft = '8px';
+          resetBtn.addEventListener('click', function () { resetDebt(s.id, s.ad, s.bakiye || 0); });
+          tdActions.appendChild(resetBtn);
+
           var ledgerBtn = document.createElement('button');
           ledgerBtn.className = 'lal-btn';
           ledgerBtn.textContent = 'Hareketler';
@@ -156,6 +170,49 @@
       .then(function () { loadSuppliers(); });
   }
 
+  function addAdjustment(id, ad) {
+    var tutarStr = prompt(ad + ' için borç düzeltmesi (₺). Borç eklemek için pozitif, düşmek için negatif gir (örn: 1500 veya -300):');
+    if (tutarStr === null) return;
+    var tutar = parseFloat(tutarStr.replace(',', '.'));
+    if (isNaN(tutar) || tutar === 0) {
+      alert('Sıfırdan farklı, geçerli bir tutar girmelisin.');
+      return;
+    }
+    var aciklama = prompt('Açıklama (opsiyonel):') || 'Manuel borç düzeltmesi';
+    fetch('/api/tedarikciler/' + id + '/duzeltme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tutar: tutar, aciklama: aciklama }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { showMsg(formMsg, data.error, true); return; }
+        showMsg(formMsg, 'Düzeltme kaydedildi: ' + currencyFmt.format(tutar), false);
+        loadSuppliers();
+      })
+      .catch(function () { showMsg(formMsg, 'Düzeltme kaydedilemedi.', true); });
+  }
+
+  function resetDebt(id, ad, bakiye) {
+    if (!bakiye) {
+      showMsg(formMsg, ad + ' bakiyesi zaten sıfır.', false);
+      return;
+    }
+    if (!confirm(ad + ' bakiyesi (' + currencyFmt.format(bakiye) + ') sıfırlansın mı? Geçmiş silinmez, dengeleyici bir hareket eklenir.')) return;
+    fetch('/api/tedarikciler/' + id + '/sifirla', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aciklama: 'Bakiye sıfırlama' }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { showMsg(formMsg, data.error, true); return; }
+        showMsg(formMsg, ad + ' bakiyesi sıfırlandı.', false);
+        loadSuppliers();
+      })
+      .catch(function () { showMsg(formMsg, 'Sıfırlanamadı.', true); });
+  }
+
   function showLedger(id, ad) {
     ledgerTitle.textContent = 'Hareketler — ' + ad;
     ledgerTbody.innerHTML = '<tr><td colspan="4" class="lal-status-text">Yükleniyor…</td></tr>';
@@ -175,8 +232,13 @@
           var tr = document.createElement('tr');
           var tdTarih = document.createElement('td'); tdTarih.textContent = fmtDate(h.tarih); tr.appendChild(tdTarih);
           var tdTip = document.createElement('td');
-          tdTip.textContent = h.tip === 'satis' ? 'Satış (borç)' : 'Ödeme';
-          tdTip.style.color = h.tip === 'satis' ? 'var(--lal-amber)' : 'var(--lal-green)';
+          var tipMap = {
+            satis: ['Satış (borç)', 'var(--lal-amber)'],
+            duzeltme: ['Düzeltme', 'var(--lal-text-muted)'],
+          };
+          var tipInfo = tipMap[h.tip] || ['Ödeme', 'var(--lal-green)'];
+          tdTip.textContent = tipInfo[0];
+          tdTip.style.color = tipInfo[1];
           tr.appendChild(tdTip);
           var tdTutar = document.createElement('td'); tdTutar.textContent = currencyFmt.format(h.tutar || 0); tr.appendChild(tdTutar);
           var tdAciklama = document.createElement('td'); tdAciklama.textContent = h.aciklama || '—'; tr.appendChild(tdAciklama);
