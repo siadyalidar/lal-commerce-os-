@@ -186,3 +186,8 @@ html[data-lal-theme="light"] {
   --lal-hero-from: #f7e9ea;
   --lal-result-bg: #f3e4e5;
 }
+
+html[data-lal-theme="light"] {
+  --lal-violet: #7c5cc4;
+  --lal-violet-dim: rgba(124, 92, 196, 0.12);
+}

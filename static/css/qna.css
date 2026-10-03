@@ -4,14 +4,14 @@
 .qna-list { display:grid; gap:var(--lal-space-3); max-height: 720px; overflow-y: auto; }
 
 .qna-card { background:var(--lal-surface); border:1px solid var(--lal-border); border-radius:var(--lal-radius-lg); padding:var(--lal-space-4); }
-.qna-card.needs-clarification { border-color: #f5a623; }
+.qna-card.needs-clarification { border-color: var(--lal-amber); }
 
 .qna-card-header { align-items:flex-start; display:flex; gap:var(--lal-space-3); justify-content:space-between; margin-bottom:var(--lal-space-3); }
 .qna-card-sku { color:var(--lal-text-muted); font-family:var(--lal-font-mono); font-size:.76rem; }
 .qna-card-date { color:var(--lal-text-muted); font-family:var(--lal-font-mono); font-size:.78rem; white-space:nowrap; }
 .qna-card-badge { border-radius:999px; font-size:.68rem; font-weight:600; padding:2px 8px; text-transform:uppercase; letter-spacing:.04em; }
-.qna-card-badge.is-clarification { background:#f5a623; color:#fff; }
-.qna-card-badge.is-ready { background:var(--lal-accent); color:#fff; }
+.qna-card-badge.is-clarification { background:var(--lal-amber); color:var(--lal-bg); }
+.qna-card-badge.is-ready { background:var(--lal-accent); color:var(--lal-accent-fg); }
 
 .qna-card-question { color:var(--lal-text-main); font-size:.92rem; line-height:1.5; margin-bottom:var(--lal-space-3); }
 .qna-card-question strong { color:var(--lal-text-muted); font-size:.78rem; font-weight:600; text-transform:uppercase; letter-spacing:.03em; display:block; margin-bottom:4px; }
@@ -28,7 +28,7 @@
 .qna-card-actions { display:flex; gap:var(--lal-space-2); margin-top:var(--lal-space-3); }
 .qna-btn { border-radius:var(--lal-radius-md); border:1px solid var(--lal-border); background:var(--lal-surface); color:var(--lal-text-main); cursor:pointer; font-size:.85rem; font-weight:600; padding:8px 14px; transition:opacity .15s; }
 .qna-btn:hover { opacity:.8; }
-.qna-btn.is-primary { background:var(--lal-accent); border-color:var(--lal-accent); color:#fff; }
+.qna-btn.is-primary { background:var(--lal-accent); border-color:var(--lal-accent); color:var(--lal-accent-fg); }
 .qna-btn:disabled { cursor:default; opacity:.5; }
 
 .qna-card-status-note { color:var(--lal-text-muted); font-size:.78rem; margin-top:var(--lal-space-2); }

@@ -182,3 +182,8 @@
   --lal-hero-from: #191719;
   --lal-result-bg: #24181b;
 }
+
+:root {
+  --lal-violet: #a78bfa;
+  --lal-violet-dim: rgba(167, 139, 250, 0.12);
+}

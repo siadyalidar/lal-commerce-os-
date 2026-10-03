@@ -139,7 +139,7 @@
   }
   .alert-clickable { cursor: pointer; text-align: left; width: 100%; font-family: var(--font-body); }
   .alert-clickable:hover { filter: brightness(1.15); }
-  .alert-danger { background: var(--red-dim); border-color: rgba(240,102,90,0.28); color: #FF9188; }
+  .alert-danger { background: var(--red-dim); border-color: rgba(240,102,90,0.28); color: var(--lal-red); }
   .alert-warning { background: var(--amber-dim); border-color: rgba(229,169,79,0.28); color: var(--amber); }
   .alert-info { background: var(--surface-2); border-color: var(--border); color: var(--text-muted); }
   .alert-success { background: var(--green-dim); border-color: rgba(52,211,153,0.28); color: var(--green); }
@@ -158,7 +158,7 @@
   }
   #error-banner {
     display: none;
-    background: var(--red-dim); border: 1px solid rgba(240,102,90,0.3); color: #FF9188;
+    background: var(--red-dim); border: 1px solid rgba(240,102,90,0.3); color: var(--lal-red);
     padding: 12px 16px; border-radius: 10px; margin-bottom: 20px; font-size: 13.5px;
   }
   #sync-status {
@@ -275,9 +275,9 @@
   }
   .pill-estimated { background: var(--amber-dim); color: var(--amber); }
   .pill-real { background: var(--green-dim); color: var(--green); }
-  .pill-missing { background: var(--red-dim); color: #FF9188; }
+  .pill-missing { background: var(--red-dim); color: var(--lal-red); }
   .pill-delivered { background: var(--green-dim); color: var(--green); }
-  .pill-cancelled { background: var(--red-dim); color: #FF9188; }
+  .pill-cancelled { background: var(--red-dim); color: var(--lal-red); }
   .pill-other { background: var(--surface-2); color: var(--text-muted); }
 
   tr.order-row { cursor: pointer; }
@@ -302,8 +302,8 @@
      kullanıyor. Başka bir bağımlılık çıkarsa diye şimdilik silinmedi, sadece
      işaretlendi; temiz bir gelecek geçişte kaldırılabilir. */
   .mp-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-  .mp-trendyol { background: rgba(242,122,26,0.12); color: #F2A366; border: 1px solid rgba(242,122,26,0.3); }
-  .mp-hepsiburada { background: rgba(255,193,7,0.12); color: #E0B84D; border: 1px solid rgba(255,193,7,0.3); }
+  .mp-trendyol { background: var(--lal-mp-trendyol-dim); color: color-mix(in srgb, var(--lal-mp-trendyol) 70%, var(--lal-text-main)); border: 1px solid color-mix(in srgb, var(--lal-mp-trendyol) 30%, transparent); }
+  .mp-hepsiburada { background: var(--lal-mp-hepsiburada-dim); color: color-mix(in srgb, var(--lal-mp-hepsiburada) 70%, var(--lal-text-main)); border: 1px solid color-mix(in srgb, var(--lal-mp-hepsiburada) 30%, transparent); }
   .mp-other { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
 
   .mp-switch {

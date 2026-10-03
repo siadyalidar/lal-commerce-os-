@@ -264,7 +264,7 @@
       resultEl.classList.remove('is-hidden');
       resultEl.style.background = 'rgba(240,102,90,0.12)';
       resultEl.style.borderColor = 'rgba(240,102,90,0.3)';
-      resultEl.innerHTML = '<span style="color:#FF9188;">Geçerli bir maliyet girin.</span>';
+      resultEl.innerHTML = '<span style="color:var(--lal-red);">Geçerli bir maliyet girin.</span>';
       return;
     }
 
@@ -274,7 +274,7 @@
     if (denom <= 0) {
       resultEl.style.background = 'rgba(240,102,90,0.12)';
       resultEl.style.borderColor = 'rgba(240,102,90,0.3)';
-      resultEl.innerHTML = '<span style="color:#FF9188;">Komisyon + hedef marj toplamı %100\'ü geçemez — bu kombinasyonla hiçbir fiyat hedefe ulaşamaz. Hedef marjı veya komisyonu düşürün.</span>';
+      resultEl.innerHTML = '<span style="color:var(--lal-red);">Komisyon + hedef marj toplamı %100\'ü geçemez — bu kombinasyonla hiçbir fiyat hedefe ulaşamaz. Hedef marjı veya komisyonu düşürün.</span>';
       return;
     }
 
