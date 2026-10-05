@@ -942,6 +942,9 @@ def upsert_order_lines(rows):
     """rows: dict listesi. Her dict 'marketplace' alanı içermeli."""
     if not rows:
         return
+    from sku_alias import normalize_sku
+    for r in rows:
+        r["merchant_sku"] = normalize_sku(r.get("merchant_sku"))
     for r in rows:
         r.setdefault("sales_campaign_id", None)
         r.setdefault("seller_discount", None)
@@ -1287,6 +1290,9 @@ def upsert_product_stock_quantities(rows):
     ayarlıyor, bkz. upsert_product_stock_threshold)."""
     if not rows:
         return
+    from sku_alias import normalize_sku
+    for r in rows:
+        r["sku"] = normalize_sku(r.get("sku"))
     with get_connection() as conn:
         conn.executemany("""
             INSERT INTO product_stock (marketplace, sku, barcode, quantity, stock_updated_at, updated_at)
@@ -1525,6 +1531,8 @@ def get_existing_review_ids(external_review_ids, marketplace="hepsiburada"):
 
 
 def upsert_product_stock_threshold(marketplace, sku, min_stock_threshold):
+    from sku_alias import normalize_sku
+    sku = normalize_sku(sku)
     with get_connection() as conn:
         conn.execute("""
             INSERT INTO product_stock (marketplace, sku, min_stock_threshold, updated_at)
