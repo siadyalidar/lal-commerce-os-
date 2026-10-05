@@ -16,6 +16,43 @@
   var MP = { trendyol: 'Trendyol', hepsiburada: 'Hepsiburada' };
   var money = new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' });
 
+  var SOUND_SRC = '/static/sounds/yeni-siparis.mp3';
+  var SOUND_KEY = 'lal-notif-sound';
+  var audio = null;
+  var unlocked = false;
+  function soundOn() {
+    try { return localStorage.getItem(SOUND_KEY) !== 'off'; } catch (e) { return true; }
+  }
+  function getAudio() {
+    if (!audio) { audio = new Audio(SOUND_SRC); audio.preload = 'auto'; audio.volume = 0.7; }
+    return audio;
+  }
+  function unlockAudio() {
+    if (unlocked) return;
+    var a = getAudio();
+    a.muted = true;
+    var p = a.play();
+    if (p && p.then) {
+      p.then(function () { a.pause(); a.currentTime = 0; a.muted = false; unlocked = true; })
+        .catch(function () { a.muted = false; });
+    }
+  }
+  function playSound() {
+    if (!soundOn()) return;
+    var a = getAudio();
+    a.muted = false;
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && p.catch) p.catch(function () {});
+  }
+  function playFor(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].kind === 'order') { playSound(); return; }
+    }
+  }
+  document.addEventListener('pointerdown', unlockAudio);
+  document.addEventListener('keydown', unlockAudio);
+
   var items = [];
   var unread = 0;
   var filter = 'all';
@@ -273,6 +310,7 @@
       var ids = fresh.map(function (n) { return n.id; });
       items = fresh.concat(items.filter(function (n) { return ids.indexOf(n.id) < 0; }));
       ring();
+      playFor(fresh);
       stripFor(fresh);
       if (drawer.classList.contains('is-open')) render();
     }).catch(function () {});
@@ -351,7 +389,8 @@
     open: function () { if (drawer) openDrawer(); },
     close: function () { if (drawer) closeDrawer(); },
     refresh: poll,
-    preview: function () { showStrip('order', 'Yeni sipariş', 'Trendyol · 10123456789 · ' + money.format(1250)); }
+    preview: function () { playSound(); showStrip('order', 'Yeni sipariş', 'Trendyol · 10123456789 · ' + money.format(1250)); },
+    sound: function (on) { try { localStorage.setItem(SOUND_KEY, on === false ? 'off' : 'on'); } catch (e) {} }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
