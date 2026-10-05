@@ -88,6 +88,8 @@ app.register_blueprint(growth_routes_bp)
 
 from blueprints.qna_routes import bp as qna_routes_bp  # noqa: E402
 app.register_blueprint(qna_routes_bp)
+from blueprints.notification_routes import bp as notification_routes_bp
+app.register_blueprint(notification_routes_bp)
 
 # ============================================================
 # ERİŞİM KONTROLÜ (HTTP Basic Auth)

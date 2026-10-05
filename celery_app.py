@@ -48,7 +48,7 @@ celery_app = Celery(
     # örneklemle manuel doğrulama yapılmadan periyodik çalıştırmak riskli.
     # qna_sync_tasks: 29.08.2026 eklendi -- AYNI kural, Beat'e otomatik
     # eklenmedi (bkz. qna_sync_tasks.py docstring'i).
-    include=["tasks", "payout_scrape_tasks", "hb_review_sync_tasks", "qna_sync_tasks"],
+    include=["tasks", "payout_scrape_tasks", "hb_review_sync_tasks", "qna_sync_tasks", "notification_tasks"],
 )
 
 celery_app.conf.update(
@@ -130,5 +130,9 @@ celery_app.conf.beat_schedule = {
     "nightly-cargo-reconciliation": {
         "task": "tasks.scheduled_cargo_reconciliation",
         "schedule": 60 * 15,  # her 15 dakikada bir
+    },
+    "notification-detect": {
+        "task": "notification_tasks.detect_notifications",
+        "schedule": 60 * 5,  # her 5 dakikada bir
     },
 }
