@@ -37,3 +37,5 @@ analiz_ciktisi.txt
 analiz_ciktisi2.txt
 *.bak-20260830
 *.bak_qna_beat_*
+
+*.db.bak*
