@@ -96,7 +96,7 @@ celery_app.conf.beat_schedule = {
     # olmadığı için günde bir kez yeterli görülüyor.
     "hb-review-sync": {
         "task": "hb_review_sync_tasks.sync_hepsiburada_reviews",
-        "schedule": crontab(hour=4, minute=0),  # her gece 04:00 (Europe/Istanbul)
+        "schedule": 60 * 15,  # her 15 dakikada bir
         "kwargs": {"limit": None},
     },
     # AKTİF — 30.08.2026: canlı ortamda manuel tetiklemeyle doğrulandı
@@ -129,6 +129,6 @@ celery_app.conf.beat_schedule = {
     # secildi. Idempotent, guvenle her gece calisabilir.
     "nightly-cargo-reconciliation": {
         "task": "tasks.scheduled_cargo_reconciliation",
-        "schedule": crontab(hour=5, minute=0),  # her gece 05:00 (Europe/Istanbul)
+        "schedule": 60 * 15,  # her 15 dakikada bir
     },
 }
