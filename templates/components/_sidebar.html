@@ -33,6 +33,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg>
       <span class="lal-nav-label">Siparişler</span>
     </a>
+    <a class="lal-nav-item {{ 'is-active' if active_page == 'paketlenecekler' else '' }}" href="{{ url_for('paketlenecekler_routes.paketlenecekler_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg>
+      <span class="lal-nav-label">Paketlenecekler</span>
+    </a>
     <a class="lal-nav-item {{ 'is-active' if active_page == 'urunler' else '' }}" href="{{ url_for('dashboard_routes.urunler_page') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3 5.5 19h13z"/><path d="M12 12h6.5L22 21H2l3.5-9z" opacity="0"/><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg>
       <span class="lal-nav-label">Ürünler</span>

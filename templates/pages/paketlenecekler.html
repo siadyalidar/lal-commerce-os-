@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Paketlenecekler — LAL{% endblock %}
+{% block page_title %}Paketlenecekler{% endblock %}
+
+{% block content %}
+<style>
+.pk-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.pk-list{display:grid;gap:12px}
+.pk-card{display:grid;grid-template-columns:1fr auto;gap:16px;padding:16px 18px;border:1px solid var(--lal-border,rgba(128,128,128,.25));border-radius:14px}
+.pk-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.pk-badge{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;color:#fff}
+.pk-mp-ty{background:var(--lal-mp-trendyol,#F27A1A)}
+.pk-mp-hb{background:var(--lal-mp-hepsiburada,#FF6000)}
+.pk-state{font-size:12px;opacity:.7}
+.pk-no{font-weight:600}
+.pk-lines{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:3px;font-size:14px}
+.pk-lines em{opacity:.55;font-style:normal;font-size:12px}
+.pk-qty{font-weight:600}
+.pk-meta{font-size:13px;opacity:.75;margin-top:8px}
+.pk-side{text-align:right;min-width:150px}
+.pk-timer{display:block;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.pk-timer.is-soon{color:#d97706}
+.pk-timer.is-late{color:#dc2626}
+.pk-due{font-size:12px;opacity:.65}
+.pk-total{margin-top:10px;font-weight:600}
+.pk-empty{padding:28px;text-align:center;opacity:.7}
+@media (max-width:640px){.pk-card{grid-template-columns:1fr}.pk-side{text-align:left}}
+</style>
+
+<section class="lal-page-intro">
+  <p>Kargo operasyonu</p>
+  <h1>Bugün çıkacaklar, <strong>tek ekranda.</strong></h1>
+  <span>Trendyol ve Hepsiburada'nın paketlenmeyi bekleyen siparişleri, canlı.</span>
+</section>
+
+<div class="panel">
+  <div class="panel-header-row"><h2>Paketlenecek siparişler</h2></div>
+  <div class="details-body">
+    <div class="pk-bar">
+      <select id="pk-mp">
+        <option value="">Tüm pazaryerleri</option>
+        <option value="trendyol">Trendyol</option>
+        <option value="hepsiburada">Hepsiburada</option>
+      </select>
+      <button id="pk-refresh" class="lal-btn lal-btn-secondary" type="button">Yenile</button>
+      <span class="panel-note" id="pk-note">Yükleniyor…</span>
+    </div>
+    <div class="pk-list" id="pk-list"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var listEl = document.getElementById('pk-list');
+  var noteEl = document.getElementById('pk-note');
+  var mpEl = document.getElementById('pk-mp');
+  var btn = document.getElementById('pk-refresh');
+  var data = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  function money(v) {
+    if (v == null) return '';
+    return Number(v).toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' TL';
+  }
+  function dt(ms) {
+    if (!ms) return '—';
+    return new Date(ms).toLocaleString('tr-TR', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'});
+  }
+  function card(r) {
+    var lines = (r.lines || []).map(function (l) {
+      return '<li><span class="pk-qty">' + esc(l.qty) + '×</span> ' + esc(l.name) +
+        (l.sku ? ' <em>' + esc(l.sku) + '</em>' : '') + '</li>';
+    }).join('');
+    var ty = r.marketplace === 'trendyol';
+    var state = r.state === 'packed' ? 'Paket hazır, kargolanacak' : 'Paketlenecek';
+    return '<article class="pk-card"><div>' +
+      '<div class="pk-head"><span class="pk-badge ' + (ty ? 'pk-mp-ty' : 'pk-mp-hb') + '">' +
+      (ty ? 'Trendyol' : 'Hepsiburada') + '</span><span class="pk-no">' + esc(r.order_number) +
+      '</span><span class="pk-state">' + state + '</span></div>' +
+      '<ul class="pk-lines">' + lines + '</ul>' +
+      '<div class="pk-meta">' + esc(r.customer) + (r.customer ? ' · ' : '') + 'Sipariş: ' + dt(r.order_date_ms) +
+      (r.cargo ? ' · ' + esc(r.cargo) : '') + '</div></div>' +
+      '<div class="pk-side"><span class="pk-timer" data-due="' + (r.due_ms || '') + '">—</span>' +
+      '<span class="pk-due">Kargoya teslim: ' + dt(r.due_ms) + '</span>' +
+      '<div class="pk-total">' + money(r.total) + '</div></div></article>';
+  }
+  function render() {
+    if (!data) return;
+    var mp = mpEl.value;
+    var rows = data.rows.filter(function (r) { return !mp || r.marketplace === mp; });
+    listEl.innerHTML = rows.length ? rows.map(card).join('') :
+      '<div class="pk-empty">Paketlenecek sipariş yok.</div>';
+    var ty = data.rows.filter(function (r) { return r.marketplace === 'trendyol'; }).length;
+    var hb = data.rows.length - ty;
+    var note = data.rows.length + ' sipariş · Trendyol ' + ty + ' · Hepsiburada ' + hb;
+    var errs = Object.keys(data.errors || {});
+    if (errs.length) {
+      note += ' · Alınamadı: ' + errs.map(function (k) { return k + ' (' + data.errors[k] + ')'; }).join('; ');
+    }
+    noteEl.textContent = note;
+    tick();
+  }
+  function tick() {
+    var now = Date.now();
+    document.querySelectorAll('.pk-timer').forEach(function (el) {
+      var due = Number(el.getAttribute('data-due'));
+      if (!due) { el.textContent = '—'; return; }
+      var s = Math.floor((due - now) / 1000);
+      if (s < 0) { el.textContent = 'Süre geçti'; el.classList.add('is-late'); return; }
+      var d = Math.floor(s / 86400);
+      var h = Math.floor((s % 86400) / 3600);
+      var m = Math.floor((s % 3600) / 60);
+      var x = s % 60;
+      var t = [h, m, x].map(function (n) { return String(n).padStart(2, '0'); }).join(':');
+      el.textContent = (d ? d + 'g ' : '') + t;
+      el.classList.toggle('is-soon', s < 7200);
+    });
+  }
+  function load(force) {
+    noteEl.textContent = 'Yükleniyor…';
+    fetch('/api/paketlenecekler' + (force ? '?refresh=1' : ''), {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (j) { data = j; render(); })
+      .catch(function (e) { noteEl.textContent = 'Yüklenemedi: ' + e; });
+  }
+  mpEl.addEventListener('change', render);
+  btn.addEventListener('click', function () { load(true); });
+  setInterval(tick, 1000);
+  setInterval(function () { load(false); }, 60000);
+  load(false);
+})();
+</script>
+{% endblock %}
