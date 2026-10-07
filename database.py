@@ -382,6 +382,24 @@ def _migrate_cargo_reconciliation(conn):
     """)
 
 
+def _migrate_paketlenecekler_islemleri(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS paketlenecekler_islemleri (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            marketplace TEXT NOT NULL,
+            action TEXT NOT NULL,
+            order_number TEXT,
+            target_id TEXT,
+            request_json TEXT,
+            dry_run INTEGER NOT NULL DEFAULT 1,
+            http_status INTEGER,
+            response_text TEXT,
+            ok INTEGER
+        )
+    """)
+
+
 _MIGRATIONS = [
     ("2026_07_28_composite_marketplace_keys", _migrate_composite_keys),
     ("2026_08_09_growth_columns", _migrate_growth_columns),
@@ -390,6 +408,7 @@ _MIGRATIONS = [
     ("2026_09_03_hb_discount_breakdown", _migrate_hb_discount_breakdown),
     ("2026_09_12_cargo_labels", _migrate_cargo_labels),
     ("2026_09_14_cargo_reconciliation", _migrate_cargo_reconciliation),
+    ("2026_10_07_paketlenecekler_islemleri", _migrate_paketlenecekler_islemleri),
 ]
 
 def init_db():

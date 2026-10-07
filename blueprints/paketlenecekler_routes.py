@@ -1,9 +1,15 @@
+import json
+import logging
+import os
 import time
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, render_template, request
 
+import hb_write_client as hbw
+
 bp = Blueprint("paketlenecekler_routes", __name__)
+logger = logging.getLogger(__name__)
 
 _CACHE = {"ts": 0.0, "data": None}
 _CACHE_TTL = 60
@@ -16,6 +22,10 @@ _DUE_KEYS = (
 def _core():
     import sync_core
     return sync_core
+
+
+def _writes_enabled():
+    return os.getenv("LAL_WRITES_ENABLED", "0").strip() == "1"
 
 
 def _hb_iso_to_ms(value):
@@ -42,6 +52,10 @@ def _first_due(objs, iso_to_ms):
     return None
 
 
+def _flag(objs, key):
+    return not any(o.get(key) is False for o in objs)
+
+
 def hb_unpacked(items, iso_to_ms):
     grouped = {}
     for it in items:
@@ -66,8 +80,11 @@ def hb_unpacked(items, iso_to_ms):
             "due_ms": _first_due(lines, iso_to_ms),
             "cargo": first.get("cargoCompany") or first.get("cargoCompanyName") or "",
             "total": sum((_amount(ln.get("totalPrice")) or 0) for ln in lines),
+            "can_pack": _flag(lines, "canCreatePackage"),
+            "cargo_changable": _flag(lines, "isCargoChangable"),
             "lines": [
                 {
+                    "id": ln.get("id"),
                     "name": ln.get("name") or ln.get("productName") or "",
                     "sku": ln.get("merchantSKU") or ln.get("merchantSku") or "",
                     "qty": ln.get("quantity") or 1,
@@ -95,8 +112,11 @@ def hb_packed(pkgs, iso_to_ms):
             "due_ms": _first_due([p] + items, iso_to_ms),
             "cargo": p.get("cargoCompany") or "",
             "total": _amount(p.get("totalPrice")),
+            "can_pack": True,
+            "cargo_changable": True,
             "lines": [
                 {
+                    "id": it.get("lineItemId") or it.get("id"),
                     "name": it.get("productName") or it.get("name") or "",
                     "sku": it.get("merchantSku") or it.get("merchantSKU") or "",
                     "qty": it.get("quantity") or 1,
@@ -222,6 +242,27 @@ def _collect(debug=False):
     return out
 
 
+def _log(action, order_number, target_id, req, dry_run, status, text, ok):
+    try:
+        from database import get_connection
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO paketlenecekler_islemleri "
+                "(marketplace, action, order_number, target_id, request_json, "
+                "dry_run, http_status, response_text, ok) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    "hepsiburada", action, order_number, target_id,
+                    json.dumps({"method": req["method"], "path": req["path"], "body": req["body"]},
+                               ensure_ascii=False),
+                    1 if dry_run else 0, status, (text or "")[:2000],
+                    None if ok is None else (1 if ok else 0),
+                ),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("paketlenecekler islem gunlugu yazilamadi: %s", exc)
+
+
 @bp.route("/paketlenecekler")
 def paketlenecekler_page():
     return render_template("pages/paketlenecekler.html", active_page="paketlenecekler")
@@ -239,3 +280,66 @@ def api_paketlenecekler():
         _CACHE["ts"] = now
         _CACHE["data"] = data
     return jsonify(data)
+
+
+@bp.route("/api/paketlenecekler/hb/kargo-secenekleri")
+def api_hb_cargo_options():
+    core = _core()
+    cred_error = core._check_hb_credentials()
+    if cred_error:
+        return jsonify({"error": cred_error}), 400
+    try:
+        path = hbw.options_path(
+            core.HB_MERCHANT_ID, request.args.get("line_id"), request.args.get("package_number"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        raw = core.hepsiburada_get(path)
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:300]}), 502
+    return jsonify({"options": hbw.normalize_options(raw)})
+
+
+@bp.route("/api/paketlenecekler/hb/islem", methods=["POST"])
+def api_hb_islem():
+    if not request.is_json:
+        return jsonify({"ok": False, "error": "JSON gerekli"}), 415
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Geçersiz istek"}), 400
+    action = payload.get("action")
+    dry_run = payload.get("dry_run") is not False
+    order_number = str(payload.get("order_number") or "")[:64]
+    core = _core()
+    cred_error = core._check_hb_credentials()
+    if cred_error:
+        return jsonify({"ok": False, "error": cred_error}), 400
+    try:
+        reqs = hbw.build_requests(action, core.HB_MERCHANT_ID, payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    writes_enabled = _writes_enabled()
+    if dry_run:
+        preview = [{"method": r["method"], "path": r["path"], "body": r["body"]} for r in reqs]
+        return jsonify({"ok": True, "dry_run": True, "writes_enabled": writes_enabled,
+                        "requests": preview})
+
+    if not writes_enabled:
+        return jsonify({
+            "ok": False, "dry_run": False, "writes_enabled": False,
+            "error": "Yazma işlemleri kapalı. Açmak için .env dosyasına LAL_WRITES_ENABLED=1 ekleyip servisi yeniden başlat.",
+        }), 403
+
+    results = []
+    all_ok = True
+    for r in reqs:
+        status, text = hbw.send(core, r)
+        ok = 200 <= status < 300
+        _log(action, order_number, r["target_id"], r, False, status, text, ok)
+        results.append({"path": r["path"], "status": status, "response": text[:600]})
+        if not ok:
+            all_ok = False
+            break
+    _CACHE["data"] = None
+    return jsonify({"ok": all_ok, "dry_run": False, "writes_enabled": True, "results": results})
