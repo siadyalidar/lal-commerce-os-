@@ -17,6 +17,7 @@
 .pk-lines em{opacity:.55;font-style:normal;font-size:12px}
 .pk-qty{font-weight:600}
 .pk-meta{font-size:13px;opacity:.75;margin-top:8px}
+.pk-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .pk-side{text-align:right;min-width:150px}
 .pk-timer{display:block;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
 .pk-timer.is-soon{color:#d97706}
@@ -24,6 +25,17 @@
 .pk-due{font-size:12px;opacity:.65}
 .pk-total{margin-top:10px;font-weight:600}
 .pk-empty{padding:28px;text-align:center;opacity:.7}
+.pk-overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.pk-modal{width:min(560px,100%);max-height:90vh;overflow:auto;background:rgba(20,20,24,.98);color:#f2f2f2;border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:22px}
+.pk-modal h3{margin:0 0 6px;font-size:18px}
+.pk-modal .pk-sub{opacity:.7;font-size:13px;margin-bottom:12px;display:block}
+.pk-modal select{width:100%;margin:4px 0 12px}
+.pk-modal pre{background:rgba(255,255,255,.06);padding:10px;border-radius:10px;font-size:12px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-all}
+.pk-msg{font-size:13px;margin:10px 0}
+.pk-msg.is-warn{color:#f59e0b}
+.pk-msg.is-err{color:#f87171}
+.pk-msg.is-ok{color:#4ade80}
+.pk-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 @media (max-width:640px){.pk-card{grid-template-columns:1fr}.pk-side{text-align:left}}
 </style>
 
@@ -56,6 +68,14 @@
   var mpEl = document.getElementById('pk-mp');
   var btn = document.getElementById('pk-refresh');
   var data = null;
+  var shown = [];
+  var overlay = null;
+  var TITLES = {
+    pack: 'Paketi hazırla',
+    cargo_line: 'Kargo firmasını değiştir',
+    cargo_package: 'Kargo firmasını değiştir (paketli sipariş)',
+    unpack: 'Paketi boz'
+  };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -70,7 +90,23 @@
     if (!ms) return '—';
     return new Date(ms).toLocaleString('tr-TR', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'});
   }
-  function card(r) {
+  function actionBtn(act, idx, label, disabled) {
+    return '<button type="button" class="lal-btn lal-btn-secondary pk-act" data-act="' + act +
+      '" data-idx="' + idx + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+  }
+  function actions(r, idx) {
+    if (r.marketplace !== 'hepsiburada') return '';
+    var b = [];
+    if (r.state === 'unpacked') {
+      b.push(actionBtn('pack', idx, 'Paketi hazırla', r.can_pack === false));
+      b.push(actionBtn('cargo_line', idx, 'Kargo firmasını değiştir', r.cargo_changable === false));
+    } else if (r.state === 'packed') {
+      b.push(actionBtn('cargo_package', idx, 'Kargo firmasını değiştir', false));
+      b.push(actionBtn('unpack', idx, 'Paketi boz', false));
+    }
+    return '<div class="pk-actions">' + b.join('') + '</div>';
+  }
+  function card(r, idx) {
     var lines = (r.lines || []).map(function (l) {
       return '<li><span class="pk-qty">' + esc(l.qty) + '×</span> ' + esc(l.name) +
         (l.sku ? ' <em>' + esc(l.sku) + '</em>' : '') + '</li>';
@@ -83,7 +119,7 @@
       '</span><span class="pk-state">' + state + '</span></div>' +
       '<ul class="pk-lines">' + lines + '</ul>' +
       '<div class="pk-meta">' + esc(r.customer) + (r.customer ? ' · ' : '') + 'Sipariş: ' + dt(r.order_date_ms) +
-      (r.cargo ? ' · ' + esc(r.cargo) : '') + '</div></div>' +
+      (r.cargo ? ' · ' + esc(r.cargo) : '') + '</div>' + actions(r, idx) + '</div>' +
       '<div class="pk-side"><span class="pk-timer" data-due="' + (r.due_ms || '') + '">—</span>' +
       '<span class="pk-due">Kargoya teslim: ' + dt(r.due_ms) + '</span>' +
       '<div class="pk-total">' + money(r.total) + '</div></div></article>';
@@ -91,8 +127,8 @@
   function render() {
     if (!data) return;
     var mp = mpEl.value;
-    var rows = data.rows.filter(function (r) { return !mp || r.marketplace === mp; });
-    listEl.innerHTML = rows.length ? rows.map(card).join('') :
+    shown = data.rows.filter(function (r) { return !mp || r.marketplace === mp; });
+    listEl.innerHTML = shown.length ? shown.map(card).join('') :
       '<div class="pk-empty">Paketlenecek sipariş yok.</div>';
     var ty = data.rows.filter(function (r) { return r.marketplace === 'trendyol'; }).length;
     var hb = data.rows.length - ty;
@@ -127,6 +163,141 @@
       .then(function (j) { data = j; render(); })
       .catch(function (e) { noteEl.textContent = 'Yüklenemedi: ' + e; });
   }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (j) { return {status: r.status, json: j}; });
+    });
+  }
+  function payloadFor(act, row, cargo, dry) {
+    var p = {dry_run: dry, order_number: row.order_number};
+    if (act === 'pack') {
+      p.action = 'pack';
+      p.lines = row.lines.map(function (l) { return {id: l.id, quantity: l.qty}; });
+    } else if (act === 'cargo_line') {
+      p.action = 'change_cargo_line';
+      p.line_ids = row.lines.map(function (l) { return l.id; });
+      p.cargo_short = cargo;
+    } else if (act === 'cargo_package') {
+      p.action = 'change_cargo_package';
+      p.package_number = String(row.package_id);
+      p.cargo_short = cargo;
+    } else {
+      p.action = 'unpack';
+      p.package_number = String(row.package_id);
+    }
+    return p;
+  }
+  function closeModal() {
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    overlay = null;
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) { if (e.key === 'Escape') closeModal(); }
+
+  function openModal(act, row) {
+    closeModal();
+    var needCargo = (act === 'cargo_line' || act === 'cargo_package');
+    var cargo = '';
+    overlay = document.createElement('div');
+    overlay.className = 'pk-overlay';
+    overlay.innerHTML = '<div class="pk-modal" role="dialog" aria-modal="true"><h3></h3>' +
+      '<span class="pk-sub" data-role="sub"></span>' +
+      (needCargo ? '<span class="pk-sub">Yeni kargo firması</span><select class="pk-cargo"><option value="">Yükleniyor…</option></select>' : '') +
+      '<div class="pk-msg" data-role="msg"></div>' +
+      '<pre data-role="preview" hidden></pre>' +
+      '<div class="pk-modal-actions">' +
+      '<button type="button" class="lal-btn lal-btn-secondary" data-role="cancel">Vazgeç</button>' +
+      '<button type="button" class="lal-btn" data-role="send" disabled>Gönder</button></div></div>';
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', onKey);
+    var q = function (role) { return overlay.querySelector('[data-role="' + role + '"]'); };
+    var sendBtn = q('send');
+    var pre = q('preview');
+    var msg = q('msg');
+    overlay.querySelector('h3').textContent = TITLES[act];
+    q('sub').textContent = 'Sipariş ' + row.order_number + ' · ' +
+      (row.lines || []).map(function (l) { return l.qty + '× ' + l.name; }).join(', ');
+    function setMsg(t, c) { msg.textContent = t; msg.className = 'pk-msg' + (c ? ' ' + c : ''); }
+
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+    q('cancel').addEventListener('click', closeModal);
+
+    function refreshPreview() {
+      sendBtn.disabled = true;
+      pre.hidden = true;
+      if (needCargo && !cargo) { setMsg('Önce yeni kargo firmasını seç.', ''); return; }
+      setMsg('Önizleme hazırlanıyor…', '');
+      postJson('/api/paketlenecekler/hb/islem', payloadFor(act, row, cargo, true)).then(function (res) {
+        var j = res.json;
+        if (res.status !== 200 || !j.ok) { setMsg(j.error || 'Önizleme alınamadı.', 'is-err'); return; }
+        pre.textContent = JSON.stringify(j.requests, null, 2);
+        pre.hidden = false;
+        if (j.writes_enabled) {
+          setMsg("Aşağıdaki istek Hepsiburada'ya gönderilecek. Kontrol edip Gönder'e bas.", 'is-warn');
+          sendBtn.disabled = false;
+        } else {
+          setMsg('Yazma işlemleri kapalı: bu yalnızca önizleme, hiçbir şey gönderilmez.', 'is-warn');
+        }
+      }).catch(function (e) { setMsg('Önizleme alınamadı: ' + e, 'is-err'); });
+    }
+
+    sendBtn.addEventListener('click', function () {
+      sendBtn.disabled = true;
+      setMsg('Gönderiliyor…', '');
+      postJson('/api/paketlenecekler/hb/islem', payloadFor(act, row, cargo, false)).then(function (res) {
+        var j = res.json;
+        pre.textContent = JSON.stringify(j.results || j, null, 2);
+        pre.hidden = false;
+        if (res.status === 200 && j.ok) {
+          setMsg('Tamamlandı. Liste yenileniyor…', 'is-ok');
+          setTimeout(function () { closeModal(); load(true); }, 1800);
+        } else {
+          setMsg(j.error || 'İşlem başarısız. Hepsiburada cevabı aşağıda.', 'is-err');
+        }
+      }).catch(function (e) { setMsg('Gönderilemedi: ' + e, 'is-err'); });
+    });
+
+    if (needCargo) {
+      var sel = overlay.querySelector('.pk-cargo');
+      var refId = act === 'cargo_line' ? (row.lines[0] && row.lines[0].id) : row.package_id;
+      if (!refId) { setMsg('Bu kayıtta kalem veya paket numarası bulunamadı.', 'is-err'); return; }
+      var qs = (act === 'cargo_line' ? 'line_id=' : 'package_number=') + encodeURIComponent(refId);
+      fetch('/api/paketlenecekler/hb/kargo-secenekleri?' + qs, {credentials: 'same-origin'})
+        .then(function (r) { return r.json().then(function (j) { return {status: r.status, json: j}; }); })
+        .then(function (res) {
+          sel.innerHTML = '';
+          var first = document.createElement('option');
+          first.value = '';
+          first.textContent = 'Seçiniz';
+          sel.appendChild(first);
+          var opts = (res.json && res.json.options) || [];
+          if (res.status !== 200) { setMsg((res.json && res.json.error) || 'Kargo firmaları alınamadı.', 'is-err'); return; }
+          if (!opts.length) { setMsg('Bu sipariş için değiştirilebilir kargo firması yok.', 'is-warn'); return; }
+          opts.forEach(function (o) {
+            var el = document.createElement('option');
+            el.value = o.short;
+            el.textContent = o.name + ' (' + o.short + ')';
+            sel.appendChild(el);
+          });
+          setMsg('Yeni kargo firmasını seç.', '');
+        })
+        .catch(function (e) { setMsg('Kargo firmaları alınamadı: ' + e, 'is-err'); });
+      sel.addEventListener('change', function () { cargo = sel.value; refreshPreview(); });
+    } else {
+      refreshPreview();
+    }
+  }
+
+  listEl.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('.pk-act') : null;
+    if (!t || t.disabled) return;
+    var row = shown[Number(t.getAttribute('data-idx'))];
+    if (row) openModal(t.getAttribute('data-act'), row);
+  });
   mpEl.addEventListener('change', render);
   btn.addEventListener('click', function () { load(true); });
   setInterval(tick, 1000);
