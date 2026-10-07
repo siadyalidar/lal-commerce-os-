@@ -75,6 +75,8 @@ app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True)
 
 from blueprints.order_routes import bp as order_routes_bp  # noqa: E402
 app.register_blueprint(order_routes_bp)
+from blueprints.paketlenecekler_routes import bp as paketlenecekler_routes_bp  # noqa: E402
+app.register_blueprint(paketlenecekler_routes_bp)
 
 from blueprints.finance_routes import bp as finance_routes_bp  # noqa: E402
 app.register_blueprint(finance_routes_bp)
