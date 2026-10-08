@@ -343,3 +343,35 @@ def api_hb_islem():
             break
     _CACHE["data"] = None
     return jsonify({"ok": all_ok, "dry_run": False, "writes_enabled": True, "results": results})
+
+
+@bp.route("/api/paketlenecekler/hb/etiket")
+def api_hb_label():
+    import base64
+    from flask import Response
+    core = _core()
+    cred_error = core._check_hb_credentials()
+    if cred_error:
+        return jsonify({"error": cred_error}), 400
+    try:
+        path = hbw.label_path(core.HB_MERCHANT_ID, request.args.get("package_number"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    try:
+        raw = core.hepsiburada_get(path, {"format": "pdf"})
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:300]}), 502
+    parts = raw.get("data") if isinstance(raw, dict) else None
+    if not isinstance(parts, list) or len(parts) != 1:
+        return jsonify({"error": "Beklenmeyen etiket yanıtı (parça sayısı: %s)" % (
+            len(parts) if isinstance(parts, list) else "yok")}), 502
+    try:
+        pdf = base64.b64decode(parts[0], validate=True)
+    except Exception:
+        return jsonify({"error": "Etiket çözülemedi"}), 502
+    if not pdf.startswith(b"%PDF"):
+        return jsonify({"error": "Etiket PDF değil"}), 502
+    resp = Response(pdf, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = 'inline; filename="etiket.pdf"'
+    resp.headers["Cache-Control"] = "no-store"
+    return resp

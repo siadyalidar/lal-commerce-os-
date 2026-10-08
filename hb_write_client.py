@@ -122,3 +122,9 @@ def send(core, req):
         return resp.status_code, resp.text[:2000]
     except requests.RequestException as exc:
         return 0, str(exc)[:300]
+
+
+def label_path(merchant_id, package_number):
+    m = _clean_id(merchant_id, "merchant_id")
+    pn = _clean_id(package_number, "package_number")
+    return "/packages/merchantid/%s/packagenumber/%s/labels" % (m, pn)
