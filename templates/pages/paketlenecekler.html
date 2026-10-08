@@ -103,6 +103,7 @@
     } else if (r.state === 'packed') {
       b.push(actionBtn('cargo_package', idx, 'Kargo firmasını değiştir', false));
       b.push(actionBtn('unpack', idx, 'Paketi boz', false));
+      b.push('<a class="lal-btn lal-btn-secondary" target="_blank" rel="noopener" href="/api/paketlenecekler/hb/etiket?package_number=' + encodeURIComponent(String(r.package_id)) + '">Etiketi yazdır</a>');
     }
     return '<div class="pk-actions">' + b.join('') + '</div>';
   }
