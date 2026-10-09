@@ -435,3 +435,36 @@ def api_ty_islem():
             break
     _CACHE["data"] = None
     return jsonify({"ok": all_ok, "dry_run": False, "writes_enabled": True, "results": results})
+
+
+@bp.route("/api/paketlenecekler/ty/etiket")
+def api_ty_label():
+    from flask import Response
+    core = _core()
+    pid = (request.args.get("package_id") or "").strip()
+    if not pid.isdigit():
+        return jsonify({"error": "Geçersiz paket no"}), 400
+    now = int(time.time() * 1000)
+    try:
+        data = core.trendyol_get(
+            "/integration/order/sellers/%s/v2/orders" % core.SUPPLIER_ID,
+            {"shipmentPackageIds": pid, "startDate": now - 12 * 24 * 3600 * 1000,
+             "endDate": now + 24 * 3600 * 1000, "size": 50})
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:300]}), 502
+    pkgs = (data or {}).get("content") or []
+    pkg = next((p for p in pkgs if str(p.get("id") or p.get("shipmentPackageId")) == pid), None)
+    if not pkg:
+        return jsonify({"error": "Paket bulunamadı (son 12 gün)"}), 404
+    try:
+        import ty_label as tyl
+        pdf = tyl.build_label_pdf(pkg)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 422
+    except Exception as exc:
+        logger.warning("trendyol etiketi uretilemedi: %s", exc)
+        return jsonify({"error": "Etiket üretilemedi: %s" % str(exc)[:200]}), 500
+    resp = Response(pdf, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = 'inline; filename="trendyol-etiket.pdf"'
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
