@@ -98,7 +98,7 @@
   }
   function actions(r, idx) {
     if (r.marketplace === 'trendyol') {
-      return r.state === 'created' ? '<div class="pk-actions">' + actionBtn('picking', idx, 'Toplamaya başla', false) + actionBtn('ty_cargo', idx, 'Kargo firmasını değiştir', false) + '</div>' : '';
+      return r.state === 'created' ? '<div class="pk-actions">' + actionBtn('picking', idx, 'Toplamaya başla', false) + actionBtn('ty_cargo', idx, 'Kargo firmasını değiştir', false) + '<a class="lal-btn lal-btn-secondary" target="_blank" rel="noopener" href="/api/paketlenecekler/ty/etiket?package_id=' + encodeURIComponent(String(r.package_id)) + '">Etiketi yazdır</a></div>' : '';
     }
     if (r.marketplace !== 'hepsiburada') return '';
     var b = [];
