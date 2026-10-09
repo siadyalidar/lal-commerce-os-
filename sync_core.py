@@ -1349,7 +1349,7 @@ def fetch_all_orders(start_ts_ms, end_ts_ms, status=None):
         if status:
             params["status"] = status
 
-        data = trendyol_get(f"/integration/order/sellers/{SUPPLIER_ID}/orders", params)
+        data = trendyol_get(f"/integration/order/sellers/{SUPPLIER_ID}/v2/orders", params)
         content = data.get("content") or []
         all_orders.extend(content)
 
