@@ -74,7 +74,9 @@
     pack: 'Paketi hazırla',
     cargo_line: 'Kargo firmasını değiştir',
     cargo_package: 'Kargo firmasını değiştir (paketli sipariş)',
-    unpack: 'Paketi boz'
+    unpack: 'Paketi boz',
+    picking: 'Toplamaya başla (Picking)',
+    ty_cargo: 'Kargo firmasını değiştir'
   };
 
   function esc(s) {
@@ -95,6 +97,9 @@
       '" data-idx="' + idx + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
   }
   function actions(r, idx) {
+    if (r.marketplace === 'trendyol') {
+      return r.state === 'created' ? '<div class="pk-actions">' + actionBtn('picking', idx, 'Toplamaya başla', false) + actionBtn('ty_cargo', idx, 'Kargo firmasını değiştir', false) + '</div>' : '';
+    }
     if (r.marketplace !== 'hepsiburada') return '';
     var b = [];
     if (r.state === 'unpacked') {
@@ -165,6 +170,9 @@
       .catch(function (e) { noteEl.textContent = 'Yüklenemedi: ' + e; });
   }
 
+  function apiBase(row) {
+    return row.marketplace === 'trendyol' ? '/api/paketlenecekler/ty' : '/api/paketlenecekler/hb';
+  }
   function postJson(url, body) {
     return fetch(url, {
       method: 'POST', credentials: 'same-origin',
@@ -175,6 +183,18 @@
   }
   function payloadFor(act, row, cargo, dry) {
     var p = {dry_run: dry, order_number: row.order_number};
+    if (act === 'picking') {
+      p.action = 'picking';
+      p.package_id = row.package_id;
+      p.lines = row.lines.map(function (l) { return {id: l.id, quantity: l.qty}; });
+      return p;
+    }
+    if (act === 'ty_cargo') {
+      p.action = 'change_cargo';
+      p.package_id = row.package_id;
+      p.cargo_provider = cargo;
+      return p;
+    }
     if (act === 'pack') {
       p.action = 'pack';
       p.lines = row.lines.map(function (l) { return {id: l.id, quantity: l.qty}; });
@@ -201,7 +221,7 @@
 
   function openModal(act, row) {
     closeModal();
-    var needCargo = (act === 'cargo_line' || act === 'cargo_package');
+    var needCargo = (act === 'cargo_line' || act === 'cargo_package' || act === 'ty_cargo');
     var cargo = '';
     overlay = document.createElement('div');
     overlay.className = 'pk-overlay';
@@ -232,13 +252,13 @@
       pre.hidden = true;
       if (needCargo && !cargo) { setMsg('Önce yeni kargo firmasını seç.', ''); return; }
       setMsg('Önizleme hazırlanıyor…', '');
-      postJson('/api/paketlenecekler/hb/islem', payloadFor(act, row, cargo, true)).then(function (res) {
+      postJson(apiBase(row) + '/islem', payloadFor(act, row, cargo, true)).then(function (res) {
         var j = res.json;
         if (res.status !== 200 || !j.ok) { setMsg(j.error || 'Önizleme alınamadı.', 'is-err'); return; }
         pre.textContent = JSON.stringify(j.requests, null, 2);
         pre.hidden = false;
         if (j.writes_enabled) {
-          setMsg("Aşağıdaki istek Hepsiburada'ya gönderilecek. Kontrol edip Gönder'e bas.", 'is-warn');
+          setMsg("Aşağıdaki istek " + (row.marketplace === 'trendyol' ? "Trendyol'a" : "Hepsiburada'ya") + " gönderilecek. Kontrol edip Gönder'e bas.", 'is-warn');
           sendBtn.disabled = false;
         } else {
           setMsg('Yazma işlemleri kapalı: bu yalnızca önizleme, hiçbir şey gönderilmez.', 'is-warn');
@@ -249,7 +269,7 @@
     sendBtn.addEventListener('click', function () {
       sendBtn.disabled = true;
       setMsg('Gönderiliyor…', '');
-      postJson('/api/paketlenecekler/hb/islem', payloadFor(act, row, cargo, false)).then(function (res) {
+      postJson(apiBase(row) + '/islem', payloadFor(act, row, cargo, false)).then(function (res) {
         var j = res.json;
         pre.textContent = JSON.stringify(j.results || j, null, 2);
         pre.hidden = false;
@@ -257,7 +277,7 @@
           setMsg('Tamamlandı. Liste yenileniyor…', 'is-ok');
           setTimeout(function () { closeModal(); load(true); }, 1800);
         } else {
-          setMsg(j.error || 'İşlem başarısız. Hepsiburada cevabı aşağıda.', 'is-err');
+          setMsg(j.error || 'İşlem başarısız. Cevap aşağıda.', 'is-err');
         }
       }).catch(function (e) { setMsg('Gönderilemedi: ' + e, 'is-err'); });
     });
@@ -267,7 +287,7 @@
       var refId = act === 'cargo_line' ? (row.lines[0] && row.lines[0].id) : row.package_id;
       if (!refId) { setMsg('Bu kayıtta kalem veya paket numarası bulunamadı.', 'is-err'); return; }
       var qs = (act === 'cargo_line' ? 'line_id=' : 'package_number=') + encodeURIComponent(refId);
-      fetch('/api/paketlenecekler/hb/kargo-secenekleri?' + qs, {credentials: 'same-origin'})
+      fetch(apiBase(row) + '/kargo-secenekleri' + (act === 'ty_cargo' ? '' : '?' + qs), {credentials: 'same-origin'})
         .then(function (r) { return r.json().then(function (j) { return {status: r.status, json: j}; }); })
         .then(function (res) {
           sel.innerHTML = '';
