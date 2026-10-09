@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, render_template, request
 
 import hb_write_client as hbw
+import ty_write_client as tyw
 
 bp = Blueprint("paketlenecekler_routes", __name__)
 logger = logging.getLogger(__name__)
@@ -149,6 +150,7 @@ def ty_created(pkgs, fix_ms):
             "lines": [
                 {
                     "name": ln.get("productName") or "",
+                    "id": ln.get("lineId"),
                     "sku": ln.get("merchantSku") or ln.get("barcode") or "",
                     "qty": ln.get("quantity") or 1,
                 }
@@ -242,7 +244,7 @@ def _collect(debug=False):
     return out
 
 
-def _log(action, order_number, target_id, req, dry_run, status, text, ok):
+def _log(action, order_number, target_id, req, dry_run, status, text, ok, marketplace="hepsiburada"):
     try:
         from database import get_connection
         with get_connection() as conn:
@@ -251,7 +253,7 @@ def _log(action, order_number, target_id, req, dry_run, status, text, ok):
                 "(marketplace, action, order_number, target_id, request_json, "
                 "dry_run, http_status, response_text, ok) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
-                    "hepsiburada", action, order_number, target_id,
+                    marketplace, action, order_number, target_id,
                     json.dumps({"method": req["method"], "path": req["path"], "body": req["body"]},
                                ensure_ascii=False),
                     1 if dry_run else 0, status, (text or "")[:2000],
@@ -375,3 +377,61 @@ def api_hb_label():
     resp.headers["Content-Disposition"] = 'inline; filename="etiket.pdf"'
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@bp.route("/api/paketlenecekler/ty/kargo-secenekleri")
+def api_ty_cargo_options():
+    core = _core()
+    try:
+        raw = core.trendyol_get("/integration/product/lookup/cargo-providers")
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:300]}), 502
+    opts = []
+    if isinstance(raw, list):
+        for it in raw:
+            if isinstance(it, dict) and it.get("code"):
+                code = str(it["code"])
+                opts.append({"short": code, "name": str(it.get("name") or code)})
+    return jsonify({"options": opts})
+
+
+@bp.route("/api/paketlenecekler/ty/islem", methods=["POST"])
+def api_ty_islem():
+    if not request.is_json:
+        return jsonify({"ok": False, "error": "JSON gerekli"}), 415
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Geçersiz istek"}), 400
+    action = payload.get("action")
+    dry_run = payload.get("dry_run") is not False
+    order_number = str(payload.get("order_number") or "")[:64]
+    core = _core()
+    try:
+        reqs = tyw.build_requests(action, core.SUPPLIER_ID, payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    writes_enabled = _writes_enabled()
+    if dry_run:
+        preview = [{"method": r["method"], "path": r["path"], "body": r["body"]} for r in reqs]
+        return jsonify({"ok": True, "dry_run": True, "writes_enabled": writes_enabled,
+                        "requests": preview})
+
+    if not writes_enabled:
+        return jsonify({
+            "ok": False, "dry_run": False, "writes_enabled": False,
+            "error": "Yazma işlemleri kapalı. Açmak için .env dosyasına LAL_WRITES_ENABLED=1 ekleyip servisi yeniden başlat.",
+        }), 403
+
+    results = []
+    all_ok = True
+    for r in reqs:
+        status, text = tyw.send(core, r)
+        ok = 200 <= status < 300
+        _log(action, order_number, r["target_id"], r, False, status, text, ok, marketplace="trendyol")
+        results.append({"path": r["path"], "status": status, "response": text[:600]})
+        if not ok:
+            all_ok = False
+            break
+    _CACHE["data"] = None
+    return jsonify({"ok": all_ok, "dry_run": False, "writes_enabled": True, "results": results})
